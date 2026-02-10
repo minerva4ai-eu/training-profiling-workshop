@@ -1,0 +1,58 @@
+Bootstrap: docker
+From: python:3.12-slim
+
+%post
+    # Install system dependencies
+    # libaio-dev is crucial for DeepSpeed's high-speed I/O
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libaio-dev \
+        wget \
+        git \
+        ca-certificates \
+        cmake \
+        openmpi-bin libopenmpi-dev
+
+    # Upgrade pip and install build essentials for Python 3.12 compatibility
+    pip install --no-cache-dir --upgrade pip setuptools wheel
+
+    # Install PyTorch 2.10.0
+    # Ensuring we use the CUDA 12.1 compatible wheels
+    pip install --no-cache-dir \
+        "torch==2.10.0" \
+        torchvision \
+        torchaudio \
+        --index-url https://download.pytorch.org/whl/cu126
+
+    # Install Accelerate and DeepSpeed
+    pip install --no-cache-dir \
+        "accelerate==1.12.0" \
+        "deepspeed==0.18.4" \
+	transformers \
+	wandb \
+	matplotlib \
+	seaborn \
+	pandas 
+
+    # Cleanup to keep the image small
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # DeepSpeed environment setup
+    export DS_BUILD_OPS=0
+    # Python 3.12 specific optimization (optional)
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec python "$@"
+
+%help
+    Container Specs:
+    - OS: Debian (via Python 3.12-slim)
+    - Python: 3.12
+    - PyTorch: 2.10.0
+    - Accelerate: 1.12.0
+    - DeepSpeed: 0.18.4

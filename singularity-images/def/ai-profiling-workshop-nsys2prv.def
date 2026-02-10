@@ -1,0 +1,41 @@
+Bootstrap: docker
+From: python:3.12-slim
+
+%post
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libaio-dev \
+        wget \
+        git \
+        ca-certificates \
+        cmake \
+        openmpi-bin libopenmpi-dev
+
+    # Upgrade pip and install build essentials for Python 3.12 compatibility
+    pip install --no-cache-dir --upgrade pip setuptools wheel
+
+    # Install PyTorch 2.10.0
+    # Ensuring we use the CUDA 12.1 compatible wheels
+    pip install --no-cache-dir "nsys2prv==0.5.8"
+
+
+    # Cleanup to keep the image small
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export LC_ALL=C
+    export PATH=/usr/local/bin:$PATH
+    # DeepSpeed environment setup
+    export DS_BUILD_OPS=0
+    # Python 3.12 specific optimization (optional)
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec python "$@"
+
+%help
+    Container Specs:
+    - OS: Debian (via Python 3.12-slim)
+    - Python: 3.12
+    - nsys2prv: 0.5.8
