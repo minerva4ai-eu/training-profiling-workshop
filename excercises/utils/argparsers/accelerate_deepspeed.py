@@ -8,6 +8,7 @@ distributed training with hierarchical partitioning support.
 
 import argparse
 import os
+from typing import Optional
 
 
 class AccelerateDeepSpeedArgParser:
@@ -24,9 +25,9 @@ class AccelerateDeepSpeedArgParser:
     def __init__(self, description="DeepSpeed ZeRO-3 Training with Accelerate"):
         self.parser = argparse.ArgumentParser(description=description)
 
-        # =====================================================================
-        # Model and Data Arguments
-        # =====================================================================
+        # ========================== #
+        # Model and Data Arguments   #
+        # ========================== #
         self.parser.add_argument(
             "--model-path",
             type=str,
@@ -46,9 +47,9 @@ class AccelerateDeepSpeedArgParser:
             help="Subset size for quick testing (default: use full dataset)",
         )
 
-        # =====================================================================
-        # Training Hyperparameters
-        # =====================================================================
+        # =========================== #
+        # Training Hyperparameters    #
+        # =========================== #
         self.parser.add_argument(
             "--batch-size",
             type=int,
@@ -92,9 +93,14 @@ class AccelerateDeepSpeedArgParser:
             help="Random seed for reproducibility (default: 1)",
         )
 
-        # =====================================================================
-        # DeepSpeed / Gradient Accumulation
-        # =====================================================================
+        # ================================== #
+        # DeepSpeed / Gradient Accumulation  #
+        # ================================== #
+        self.parser.add_argument(
+            "--deepspeed-config",
+            type=str,
+            help="Path to DeepSpeed configuration JSON file",
+        )
         self.parser.add_argument(
             "--gradient-accumulation-steps",
             type=int,
@@ -104,14 +110,14 @@ class AccelerateDeepSpeedArgParser:
         self.parser.add_argument(
             "--hpz-partition-size",
             type=int,
-            default=8,
-            help="Number of GPUs per ZeRO partition group (default: 8). "
-            "With 32 GPUs and hpz=8: 4 data parallel replicas, each sharded across 8 GPUs.",
+            default=4,
+            help="Number of GPUs per ZeRO partition group (default: 4). "
+            "With 32 GPUs and hpz=4: 8 data parallel replicas, each sharded across 4 GPUs.",
         )
 
-        # =====================================================================
-        # Validation Settings
-        # =====================================================================
+        # =========================== #
+        # Validation Settings         #
+        # =========================== #
         self.parser.add_argument(
             "--no-validation",
             action="store_false",
@@ -126,26 +132,13 @@ class AccelerateDeepSpeedArgParser:
             help="Run validation every N epochs (default: 1)",
         )
 
-        # =====================================================================
-        # Checkpointing
-        # =====================================================================
-        self.parser.add_argument(
-            "--enable-checkpoints",
-            action="store_true",
-            default=False,
-            help="Save checkpoints when validation loss improves",
-        )
-        self.parser.add_argument(
-            "--checkpoints-dir",
-            type=str,
-            default="/home/bsc/bsc206334/Workspace/"
-            + f"distributed-training/accelerate_dist/deepspeed/checkpoints/{os.environ.get('SLURM_JOB_ID', 'local')}",
-            help="Directory for saving checkpoints",
-        )
+        # =========================== #
+        # Checkpointing               #
+        # =========================== #
 
-        # =====================================================================
-        # Profiling and Debugging
-        # =====================================================================
+        # ================================== #
+        # Profiling and Debugging            #
+        # ================================== #
         self.parser.add_argument(
             "--profile",
             action="store_true",
@@ -155,8 +148,7 @@ class AccelerateDeepSpeedArgParser:
         self.parser.add_argument(
             "--profile-logdir",
             type=str,
-            default="/home/bsc/bsc206334/Workspace/"
-            + f"distributed-training/accelerate_dist/deepspeed/profiler/{os.environ.get('SLURM_JOB_ID', 'local')}",
+            default=f"./profiler/{os.environ.get('SLURM_JOB_ID', 'local')}",
             help="Directory for profiler output files",
         )
         self.parser.add_argument(
@@ -166,9 +158,9 @@ class AccelerateDeepSpeedArgParser:
             help="Enable CUDA memory history tracking",
         )
 
-        # =====================================================================
-        # Experiment Tracking
-        # =====================================================================
+        # ================================= #
+        # Experiment Tracking               #
+        # ================================= #
         self.parser.add_argument(
             "--enable-wandb",
             action="store_true",
@@ -176,9 +168,9 @@ class AccelerateDeepSpeedArgParser:
             help="Enable Weights & Biases experiment tracking (offline mode)",
         )
 
-        # =====================================================================
-        # DataLoader Settings
-        # =====================================================================
+        # ============================ #
+        # DataLoader Settings          #
+        # ============================ #
         self.parser.add_argument(
             "--dataloader-num-workers",
             type=int,
@@ -186,12 +178,34 @@ class AccelerateDeepSpeedArgParser:
             help="Number of DataLoader workers per process (default: 4)",
         )
 
-        # =====================================================================
-        # Model Saving
-        # =====================================================================
+        # ============================= #
+        # Model Saving                  #
+        # ============================= #
         self.parser.add_argument(
             "--save-model",
             action="store_true",
             default=False,
             help="Save final model after training",
         )
+        self.parser.add_argument(
+            "--enable-checkpoints",
+            action="store_true",
+            default=False,
+            help="Save checkpoints when validation loss improves",
+        )
+        self.parser.add_argument(
+            "--checkpoints-dir",
+            type=str,
+            default=f"./checkpoints/{os.environ.get('SLURM_JOB_ID', 'local')}",
+            help="Directory for saving checkpoints",
+        )
+
+    def save_json(self, path: Optional[str] = None):
+        args = self.parser.parse_args()
+        args_dict = vars(args)
+        import json
+
+        if path is None:
+            path = "args.json"
+        with open(path, "w") as f:
+            json.dump(args_dict, f, indent=4)

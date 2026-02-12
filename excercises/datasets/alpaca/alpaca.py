@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
@@ -222,7 +223,13 @@ class AlpacaData:
             self.prepare()
 
         # Tokenize all data at once
+        print("Pre-tokenizing all data examples... This may take a while...")
+        start = datetime.now()
         all_tokenized = self.tokenize(self.data)
+        end = datetime.now()
+        print(
+            f"Pre-tokenization completed in {(end - start).total_seconds():.2f} seconds. Storing tokenized tensors in memory."
+        )
 
         # Convert batch tensors to list of individual example dicts
         self.data = [

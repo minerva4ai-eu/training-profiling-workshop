@@ -270,21 +270,8 @@ def monitor_gpus(
             [gpus_metrics, pd.DataFrame(columns=cols, data=metrics)], ignore_index=True
         )
 
-        # if not header_written and metrics:
-        #    header = ["script_timestamp"] + [
-        #        "nvidia_timestamp",
-        #        "gpu_index",
-        #        "gpu_name",
-        #        "power_draw_watts",
-        #        "memory_used_MiB",
-        #        "utilization_percent",
-        #    ]
-        #    csvfile.seek(0)
-        #    csvfile.truncate()
-        #    writer.writerow(header)
-        #    header_written = True
-        # csvfile.flush()
         gpus_metrics.to_csv(output_file)
+
         time.sleep(interval_seconds)
 
     return
