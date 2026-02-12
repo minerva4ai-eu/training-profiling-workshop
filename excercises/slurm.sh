@@ -12,7 +12,7 @@ if [[ ! "$(basename "$PWD")" == "excercises" ]]; then
 fi
 
 usage() {
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $0 [OPTIONS] [-- EXTRA_ARGS]"
     echo ""
     echo "Options:"
     echo "  -n, --nodes           Number of nodes (default: 1)"
@@ -23,8 +23,17 @@ usage() {
     echo "  -e, --exercise        Exercise number (1, 2, or 3) (required)"
     echo "  -h, --help            Show this help message"
     echo ""
+    echo "Extra arguments after '--' will be passed to the training script."
+    echo ""
+    echo "  --slow-dataloading                  Enable slow dataloading example for exercise 1 (DDP) (default: disabled)"
+    echo "  --mixed-precision                   Enable mixed precision training using 'bf16' (default: disabled)"
+    echo "  --micro-batch-size N                Set micro batch size to N (default: 4)"
+    echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
+    echo "  --activation-checkpointing          Enable activation checkpointing for exercise 2 (default: disabled)"
+    echo ""
     echo "Example:"
-    echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc"
+    echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc -- --slow-dataloading --mixed-precision"
+    echo ""
     exit 1
 }
 
@@ -66,6 +75,10 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             usage
             ;;
+        --)
+            shift
+            break
+            ;;
         *)
             echo "Error: Unknown option $1"
             usage
@@ -73,13 +86,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# All remaining arguments after '--' are extra arguments
+EXTRA_ARGS=("$@")
+
 # Validate exercise number
 if [[ -z "$EXERCISE" ]]; then
     echo "Error: Exercise number is required (-e, --exercise)"
     usage
 fi
 
-if [[ ! "$EXERCISE" =~ ^[1-3]$ ]]; then
+if [[ ! "$EXERCISE" =~ ^[0-3]$ ]]; then
     echo "Error: Exercise number must be 1, 2, or 3"
     exit 1
 fi
@@ -102,6 +118,48 @@ case $EXERCISE in
         EXCERCISE_DIR="./excercise_3_MegatronLM"
         ;;
 esac
+
+i=0
+messages_to_add="\nTraining configuration added:\n"
+while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
+    arg="${EXTRA_ARGS[$i]}"
+    case "$arg" in
+        --slow-dataloading)
+            export SLOW_DATALOADING=1
+            messages_to_add+="  * Slow dataloading mode enabled!\n"
+            ;;
+        --mixed-precision)
+            export MIXED_PRECISION=1
+            messages_to_add+="  * Mixed precision mode enabled!\n"
+            ;;
+        --micro-batch-size)
+            ((i++))
+            export MICRO_BATCH_SIZE="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Micro batch size set to $MICRO_BATCH_SIZE.\n"
+            ;;
+        --gradient-accumulation-steps)
+            ((i++))
+            export GRADIENT_ACCUMULATION_STEPS="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Gradient accumulation steps set to $GRADIENT_ACCUMULATION_STEPS.\n"
+            ;;
+        --activation-checkpointing)
+            export ACTIVATION_CHECKPOINTING=1 
+            messages_to_add+="  * Activation checkpointing enabled!\n" ;;
+        *)
+            echo "  !! Error: Unknown option $arg !!"
+            usage
+            ;;
+    esac
+    ((i++))
+done
+
+
+
+# Slow dataloading is only valid for exercise 1 (DDP)
+if [[ $SLOW_DATALOADING -eq 1 && $EXERCISE -ne 1 ]]; then
+    echo "Error: --slow-dataloading option is only valid for exercise 1"
+    usage
+fi
 
 # Check if job script exists
 if [[ ! -f "$EXCERCISE_DIR/$JOB_SCRIPT" ]]; then
@@ -152,6 +210,7 @@ echo "  Account: $ACCOUNT"
 echo "  Queue/QOS: $QUEUE"
 echo "  Partition: $PARTITION"
 echo "  Job Script: $tmp_job_script"
+echo -e "$messages_to_add"
 echo "============================================================"
 
 JOB_ID=$(sbatch --export=ALL "$tmp_job_script" | awk '{print $NF}')

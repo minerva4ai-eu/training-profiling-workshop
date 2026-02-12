@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=excercise_1_ddp_nsys
+#SBATCH --job-name=1_ddp_nsys
 #SBATCH --output={{LOG_OUT}}
 #SBATCH --error={{LOG_ERR}}
 #SBATCH --nodes={{NUM_NODES}}
@@ -27,7 +27,9 @@ module load cuda/12.6  # Ensure nsys is available
 
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
-# NCCL configuration for multi-node
+# =============================================
+# NCCL Configuration for Multi-Node InfiniBand
+# =============================================
 export NCCL_NET=IB
 export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
 export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
@@ -53,10 +55,17 @@ DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.
 MODEL_PATH="/gpfs/scratch/bsc99/ai_operations/models_registry/models_registry/Llama-3.1-1B"
 CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
 
+SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
+MIXED_PRECISION=${MIXED_PRECISION:-0} # Boolean flag to enable mixed precision (e.g., bf16)
+MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-4}
+GRADIENT_ACCUMULATION_STEPS=${GRADIENT_ACCUMULATION_STEPS:-1}
+
 which python
 which nsys
 
-# Get head node for torchrun rendezvous
+# ============================================================================
+# Node Discovery and Rank Assignment
+# ============================================================================
 nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )
 nodes_array=($nodes)
 head_node=${nodes_array[0]}
@@ -103,10 +112,9 @@ sed -i "s/main_process_ip: ''/main_process_ip: $head_node_ip/g" "$tmp_config"
 sed -i "s/num_machines: 0/num_machines: $NUM_NODES/g" "$tmp_config"
 sed -i "s/num_processes: 0/num_processes: $num_processes/g" "$tmp_config"
 
-
-gpu_monitor_command="python -m utils.gpus_monitor"
-
 singularity_prefix="singularity exec --network host --nv --bind /apps:/apps $CONTAINER_IMAGE"
+
+gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 
 python_modulde="excercise_1_DDP.train"
 train_command="$singularity_prefix accelerate launch \
@@ -117,14 +125,23 @@ train_command="$singularity_prefix accelerate launch \
         --data-path $DATASET_PATH \
         --model-path $MODEL_PATH \
         --epochs 1 \
+        --data-sample 2000 \
         --no-validation \
         --profile \
-        --batch-size 4 \
-        --gradient-accumulation-steps 4 \
-"
+        --batch-size $MICRO_BATCH_SIZE \
+        --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS" # Parse additional CLI arguments while [[ $# -gt 0 ]]; do arg="$1" case $arg in
+
+TRAIN_CLI_ARGS=""
+if [[ $SLOW_DATALOADING -eq 1 ]]; then
+        TRAIN_CLI_ARGS="$TRAIN_CLI_ARGS --slow-dataloading"
+fi
+if [[ $MIXED_PRECISION -eq 1 ]]; then 
+    TRAIN_CLI_ARGS="$TRAIN_CLI_ARGS --mixed-precision bf16"
+fi
+
+train_command="$train_command $TRAIN_CLI_ARGS"
 
 NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/profiler/$SLURM_JOB_ID-nsys"
-export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
 export TRAINING_ARGUMENTS_FILE="$NSYS_OUTPUT_DIR/training_arguments.json"
 mkdir -p "$NSYS_OUTPUT_DIR"
 

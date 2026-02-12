@@ -237,6 +237,10 @@ def train_epoch(
     local_rank = int(os.environ["LOCAL_RANK"])
     rank = dist.get_rank()
 
+    num_batches = 0
+    epoch_throughput = 0.0
+    total_tokens = 0
+
     # train_loader.sampler.set_epoch(epoch)
     if accelerator.is_main_process:
         inner_pbar = tqdm.tqdm(
@@ -267,16 +271,25 @@ def train_epoch(
         "loss": torch.zeros(len(train_loader), dtype=torch.float16, device=local_rank),
         "lr": torch.zeros(len(train_loader), dtype=torch.float16, device=local_rank),
     }
-    for i, batch in enumerate(train_loader):
+
+    total_tokens = 0
+    num_batches = 0
+    train_loader_iter = iter(train_loader)
+    for i in range(len(train_loader)):
         # Start nsys capture at the beginning of active window
         if profile and i == active_start:
             print_rank(rank, f"[nsys] Starting CUDA profiler capture at batch {i}")
             torch.cuda.cudart().cudaProfilerStart()
 
+        nvtx.range_push(f"DataLoad batch {i}")
+        batch = next(train_loader_iter)
+        nvtx.range_pop()
+
         nvtx.range_push(f"batch_{i}")
 
         print_rank(rank, f"Batch {i} (size={len(batch['input_ids'])})")
 
+        ts_start = datetime.datetime.now()
         # Use Accelerate's accumulate() for automatic gradient accumulation
         # This handles: loss scaling, gradient sync skipping, optimizer step timing
         with accelerator.accumulate(model):
@@ -311,6 +324,12 @@ def train_epoch(
         )
         nvtx.range_pop()
 
+        num_batches += 1
+        total_tokens = batch["input_ids"].numel() * dist.get_world_size()
+        ts_end = datetime.datetime.now()
+        epoch_throughput += total_tokens / (ts_end - ts_start).total_seconds()
+        batch_throughput = total_tokens / (ts_end - ts_start).total_seconds()
+
         # Stop nsys capture at the end of active window
         if profile and i == (active_end - 1):
             print_rank(rank, f"[nsys] Stopping CUDA profiler capture at batch {i}")
@@ -318,6 +337,13 @@ def train_epoch(
 
         if accelerator.is_main_process:
             inner_pbar.update(1)
+            current_lr = optimizer.param_groups[0]["lr"]
+            inner_pbar.set_postfix(
+                loss=f"{loss:.4f}",
+                lr=f"{current_lr:.2e}",
+                batch_throughput=f"{batch_throughput:.2f} tok/s",
+                epoch_throughput=f"{epoch_throughput / num_batches:.2f} tok/s",
+            )
 
     if args.enable_wandb:
         # Available only on rank == 0, returns None to other ranks
@@ -495,16 +521,26 @@ def ddp_main(args: "Namespace"):
             model_path,
         )
 
-    sampler_args = dict(rank=rank, num_replicas=world_size, shuffle=True)
+    # sampler_args = dict(rank=rank, num_replicas=world_size, shuffle=True)
     loader_kwargs = {
         "num_workers": args.dataloader_num_workers,
         "pin_memory": True,
     }
-    train_loader, val_loader = dataset.get_distributed_dataloaders(
+    train_loader, val_loader = dataset.get_dataloaders(
         batch_size=args.batch_size,
-        sampler_args=sampler_args,
         loader_args=loader_kwargs,
     )
+    if args.slow_dataloading:
+        print_rank(0, "Using slow dataloader settings for profiling...")
+        loader_kwargs = {
+            "num_workers": 0,
+            "pin_memory": False,
+        }
+        train_loader, val_loader = dataset.get_dataloaders(
+            batch_size=args.batch_size,
+            loader_args=loader_kwargs,
+            pretokenized=True,
+        )
 
     print_rank(rank, "Loading model...")
     # model is on CPU before input to DDP
