@@ -206,25 +206,34 @@ sed -i "s/partition={{PARTITION}}/partition=$PARTITION/g"  "$tmp_job_script"
 sed -i "s|output={{LOG_OUT}}|output=$EXCERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.out|g"  "$tmp_job_script"
 sed -i "s|error={{LOG_ERR}}|error=$EXCERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.err|g"  "$tmp_job_script"
 
-echo "============================================================"
-echo "NSYS Profiling Configuration (Exercise $EXERCISE - $EXERCISE_NAME):"
-echo "  Number of Nodes: $NUM_NODES"
-echo "  GPUs per Node: $NUM_GPUS"
-echo "  Total GPUs: $((NUM_NODES * NUM_GPUS))"
-echo "  Account: $ACCOUNT"
-echo "  Queue/QOS: $QUEUE"
-echo "  Partition: $PARTITION"
-echo "  Job Script: $tmp_job_script"
-echo -e "$messages_to_add"
-echo "============================================================"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+MAGENTA='\033[1;35m'
+CYAN='\033[1;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+echo -e "${BOLD}${CYAN}============================================================${RESET}"
+echo -e "${BOLD}${GREEN}NSYS Profiling Configuration${RESET} (${YELLOW}Exercise $EXERCISE - $EXERCISE_NAME${RESET}):"
+echo -e "  ${MAGENTA}Number of Nodes:${RESET} ${BOLD}$NUM_NODES${RESET}"
+echo -e "  ${MAGENTA}GPUs per Node:${RESET} ${BOLD}$NUM_GPUS${RESET}"
+echo -e "  ${MAGENTA}Total GPUs:${RESET} ${BOLD}$((NUM_NODES * NUM_GPUS))${RESET}"
+echo -e "  ${MAGENTA}Account:${RESET} ${BOLD}$ACCOUNT${RESET}"
+echo -e "  ${MAGENTA}Queue/QOS:${RESET} ${BOLD}$QUEUE${RESET}"
+echo -e "  ${MAGENTA}Partition:${RESET} ${BOLD}$PARTITION${RESET}"
+echo -e "  ${MAGENTA}Job Script:${RESET} ${BOLD}$tmp_job_script${RESET}"
+echo -e "${BLUE}$messages_to_add${RESET}"
+echo -e "${BOLD}${CYAN}============================================================${RESET}"
 
 JOB_ID=$(sbatch --export=ALL "$tmp_job_script" | awk '{print $NF}')
 
-echo "Submitted job with ID=$JOB_ID"
+echo -e "${BOLD}${GREEN}Submitted job with ID=${RESET}${YELLOW}$JOB_ID${RESET}"
 echo ""
-echo "Monitor with: squeue -j $JOB_ID"
-echo "Logs will be at: $EXCERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/"
-echo "Profiles will be at: $EXCERCISE_DIR/profiler/$JOB_ID-nsys/"
+echo -e "${CYAN}Monitor with:${RESET} ${BOLD}squeue -j $JOB_ID${RESET}"
+echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXCERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
+echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXCERCISE_DIR/profiler/$JOB_ID-nsys/${RESET}"
 
 # Restore placeholders
 # EXCERCISE_DIR_ESCAPED=$(echo "$EXCERCISE_DIR" | sed 's/\./\\./g')

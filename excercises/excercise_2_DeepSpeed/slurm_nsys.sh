@@ -26,20 +26,11 @@
 # Example below:
 # With ZeRO-3 + hpZ, you control how many GPUs share sharded parameters:
 #
-#   32 GPUs total, hpz_partition_size=8:
-#   ├── Partition Group 0: GPUs 0-7   (shard model across 8 GPUs)
-#   ├── Partition Group 1: GPUs 8-15  (shard model across 8 GPUs)
-#   ├── Partition Group 2: GPUs 16-23 (shard model across 8 GPUs)
-#   └── Partition Group 3: GPUs 24-31 (shard model across 8 GPUs)
+#   2 nodes, 8 GPUs total, hpz_partition_size=4:
+#   ├── Partition Group 0 (DP 0): GPUs 0-3   (shard model across 4 GPUs)
+#   ├── Partition Group 1 (DP 1): GPUs 4-7   (shard model across 4 GPUs)
 #
-# Result: 4 data parallel replicas, each holding 1/8 of the model per GPU
-#
-# NVTX Markers in trace:
-#   - epoch_N      : Full epoch boundary
-#   - batch_N      : Individual batch processing
-#   - forward      : Model forward pass
-#   - backward     : Gradient computation
-#   - optimizer_step : Weight update
+# Result: 2 data parallel replicas, each holding 1/4 of the model per GPU
 #
 # ============================================================================
 
@@ -65,19 +56,15 @@ export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
-export PROFILER_PREFIX_PATH="$EXCERCISE_DIR"
-export GPUS_MONITOR_PREFIX_PATH="$EXCERCISE_DIR"
 export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
 export ACCELERATE_CONFIG_FILE="$EXCERCISE_DIR/accelerate_config.yaml"
-#export DS_CONFIG_FILE="$EXCERCISE_DIR/ds_config.json"
 export DS_CONFIG_FILE="$EXCERCISE_DIR/ds_config_full-precision.json"
 
 # Dataset and model paths
 DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.json"
 MODEL_PATH="/apps/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
-MODEL_PATH="/apps/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-1B"
 CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
 
 # DeepSpeed specific vars
@@ -208,7 +195,7 @@ train_command="$singularity_prefix accelerate launch \
         --epochs 1 \
         --no-validation \
         --profile \
-        --data-sample 2000 \
+        --data-sample 5000 \
         --dataloader-num-workers 8 \
         --batch-size $MICRO_BATCH_SIZE \
         --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS \
@@ -218,7 +205,17 @@ train_command="$singularity_prefix accelerate launch \
 # ============================================================================
 # NSYS Output Directory
 # ============================================================================
-NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/profiler/$SLURM_JOB_ID-nsys"
+MODEL_NAME=$(basename "$MODEL_PATH")
+export PROFILER_PREFIX_PATH="$EXCERCISE_DIR/profiler/\
+$MODEL_NAME-$SLURM_JOB_ID-\
+n$SLURM_NNODES-\
+g4-\
+mbs$MICRO_BATCH_SIZE-\
+gas${GRADIENT_ACCUMULATION_STEPS}-\
+mixed${MIXED_PRECISION}-\
+hpz${HPZ_PARTITION_SIZE}"
+export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
+NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/nsys"
 export TRAINING_ARGUMENTS_FILE="$NSYS_OUTPUT_DIR/training_arguments.json"
 mkdir -p "$NSYS_OUTPUT_DIR"
 

@@ -13,3 +13,9 @@
 *.sif
 *.csv
 *.logs
+
+*.prv
+*.pcf
+*.row
+
+conda-envs/*

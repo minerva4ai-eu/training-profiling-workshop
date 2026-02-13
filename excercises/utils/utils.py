@@ -69,63 +69,14 @@ def cleanup_nccl():
 def accelerate_setup_model(
     accelerator: "Accelerator",
     model_path: str,
-    tokenizer: "PreTrainedTokenizer",
 ):
-    # Step 1: Load config only
-    # config = AutoConfig.from_pretrained(model_path)
-    #
-    ## Step 2: Build model with empty weights
-    # with init_empty_weights():
-    #    model = AutoModelForCausalLM.from_config(config)
-    #
-    ## Step 3: Optionally identify modules not to split
-    # no_split = []
-    # if config.model_type == "llama":
-    #    print_rank(
-    #        torch.distributed.get_rank(),
-    #        "accelerate_setup_model(): Detected LLaMA model!",
-    #    )
-    #    no_split = ["LLaMADecoderLayer"]
-    #
-    ## Step 4: Load model weights safely
-    # checkpoint_index = os.path.join(model_path, "model.safetensors.index.json")
-    # if os.path.exists(checkpoint_index):
-    #    print_rank(
-    #        dist.get_rank(),
-    #        "Found 'model.safetensors.index.json'! Dispatching weights...",
-    #    )
-    #    load_checkpoint_and_dispatch(
-    #        model,
-    #        checkpoint_index,
-    #        # device_map={"": accelerator.process_index},
-    #        device_map="sequential",
-    #        no_split_module_classes=no_split,
-    #        dtype=accelerate2torch_type[accelerator.mixed_precision],
-    #    )
-    # else:
-    # print_rank(dist.get_rank(), "Falling back to from_pretrained()...")
-    ## Less efficient, loads full model before wrapping
-    # model = AutoModelForCausalLM.from_pretrained(
-    #    model_path,
-    #    torch_dtype=accelerate2torch_type[accelerator.mixed_precision],
-    #    low_cpu_mem_usage=True,
-    # )
-    # print_rank(dist.get_rank(), "Falling back to from_pretrained()...")
 
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        # torch_dtype=accelerate2torch_type[accelerator.mixed_precision],
+        torch_dtype=accelerate2torch_type[accelerator.mixed_precision],
         low_cpu_mem_usage=True,
     )
     print_rank(dist.get_rank(), "accelerate_setup_model(): Model loaded successfully!")
-    # Step 5: Set tokenizer-related config
-    if accelerator.is_main_process:
-        model.config.pad_token_id = tokenizer.pad_token_id
-        # model.resize_token_embeddings(len(tokenizer))
-        print_rank(
-            dist.get_rank(),
-            "accelerate_setup_model(): Model tokenizer vocab size resized!",
-        )
     return model
 
 

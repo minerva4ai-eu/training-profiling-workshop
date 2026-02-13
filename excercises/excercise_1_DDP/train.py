@@ -18,13 +18,13 @@ from torch.optim.lr_scheduler import LRScheduler
 from transformers.optimization import get_linear_schedule_with_warmup
 from utils.argparsers.accelerate_ddp import AccelerateDDPArguments
 from utils.utils import (
+    accelerate_setup_model,
     cleanup_nccl,
     format_metrics_to_gb,
     gather_across_processes,
     gather_tensor_to_device,
     log_cuda_memory,
     print_rank,
-    setup_model,
     stack_tensors,
     timeit,
 )
@@ -274,6 +274,8 @@ def train_epoch(
 
     total_tokens = 0
     num_batches = 0
+
+    nvtx.range_push(f"epoch_{epoch}-rank_{rank}")
     train_loader_iter = iter(train_loader)
     for i in range(len(train_loader)):
         # Start nsys capture at the beginning of active window
@@ -323,7 +325,6 @@ def train_epoch(
             f"Batch {i} | Loss = {loss} | LR: {lr_scheduler.get_last_lr()[0]}...",
         )
         nvtx.range_pop()
-
         num_batches += 1
         total_tokens = batch["input_ids"].numel() * dist.get_world_size()
         ts_end = datetime.datetime.now()
@@ -345,6 +346,7 @@ def train_epoch(
                 epoch_throughput=f"{epoch_throughput / num_batches:.2f} tok/s",
             )
 
+    nvtx.range_pop()  # epoch range pop
     if args.enable_wandb:
         # Available only on rank == 0, returns None to other ranks
         all_losses: list[torch.Tensor] = gather_tensor_to_device(
@@ -521,15 +523,6 @@ def ddp_main(args: "Namespace"):
             model_path,
         )
 
-    # sampler_args = dict(rank=rank, num_replicas=world_size, shuffle=True)
-    loader_kwargs = {
-        "num_workers": args.dataloader_num_workers,
-        "pin_memory": True,
-    }
-    train_loader, val_loader = dataset.get_dataloaders(
-        batch_size=args.batch_size,
-        loader_args=loader_kwargs,
-    )
     if args.slow_dataloading:
         print_rank(0, "Using slow dataloader settings for profiling...")
         loader_kwargs = {
@@ -539,12 +532,21 @@ def ddp_main(args: "Namespace"):
         train_loader, val_loader = dataset.get_dataloaders(
             batch_size=args.batch_size,
             loader_args=loader_kwargs,
-            pretokenized=True,
+            pretokenized=False,
+        )
+    else:
+        loader_kwargs = {
+            "num_workers": args.dataloader_num_workers,
+            "pin_memory": True,
+        }
+        train_loader, val_loader = dataset.get_dataloaders(
+            batch_size=args.batch_size,
+            loader_args=loader_kwargs,
         )
 
     print_rank(rank, "Loading model...")
     # model is on CPU before input to DDP
-    model = setup_model(model_path, tokenizer=dataset.tokenizer)
+    model = accelerate_setup_model(accelerator=accelerator, model_path=model_path)
 
     print_rank(rank, f"Using device: {accelerator.device}")
 
@@ -627,7 +629,10 @@ def ddp_main(args: "Namespace"):
 if __name__ == "__main__":
     ddp_parser = AccelerateDDPArguments()
     ddp_parser.save_json(os.environ.get("TRAINING_ARGUMENTS_FILE", "ddp_args.json"))
+
     args = ddp_parser.parser.parse_args()
+    if args.slow_dataloading:
+        args.dataloader_num_workers = 0
 
     rank = int(os.environ["RANK"])
     print(f"[ RANK {rank} ]: args.profile : {args.profile}")

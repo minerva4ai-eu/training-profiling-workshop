@@ -45,8 +45,6 @@ export HF_DATASETS_OFFLINE=1
 #cd "$EXCERCISE_DIR" || { echo "Error: Exercise directory not found: $EXCERCISE_DIR"; exit 1; }
 export ACCELERATE_CONFIG_FILE="$EXCERCISE_DIR/ddp_config.yml"
 
-export PROFILER_PREFIX_PATH="$EXCERCISE_DIR"
-export GPUS_MONITOR_PREFIX_PATH="$EXCERCISE_DIR"
 export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
@@ -125,11 +123,11 @@ train_command="$singularity_prefix accelerate launch \
         --data-path $DATASET_PATH \
         --model-path $MODEL_PATH \
         --epochs 1 \
-        --data-sample 2000 \
+        --data-sample 5000 \
         --no-validation \
         --profile \
         --batch-size $MICRO_BATCH_SIZE \
-        --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS" # Parse additional CLI arguments while [[ $# -gt 0 ]]; do arg="$1" case $arg in
+        --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS"
 
 TRAIN_CLI_ARGS=""
 if [[ $SLOW_DATALOADING -eq 1 ]]; then
@@ -141,7 +139,20 @@ fi
 
 train_command="$train_command $TRAIN_CLI_ARGS"
 
-NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/profiler/$SLURM_JOB_ID-nsys"
+# ============================================================================
+# NSYS Output Directory
+# ============================================================================
+MODEL_NAME=$(basename "$MODEL_PATH")
+export PROFILER_PREFIX_PATH="$EXCERCISE_DIR/profiler/\
+$MODEL_NAME-$SLURM_JOB_ID-\
+n$SLURM_NNODES-\
+g4-\
+mbs$MICRO_BATCH_SIZE-\
+gas${GRADIENT_ACCUMULATION_STEPS}-\
+mixed${MIXED_PRECISION}-\
+slow${SLOW_DATALOADING}"
+export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
+NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/nsys"
 export TRAINING_ARGUMENTS_FILE="$NSYS_OUTPUT_DIR/training_arguments.json"
 mkdir -p "$NSYS_OUTPUT_DIR"
 

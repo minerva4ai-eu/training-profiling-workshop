@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 GPUS_MONITOR_DIR = os.getenv(
     "GPUS_MONITOR_DIR",
-    f"profiler/{os.environ['SLURM_JOB_ID']}/{os.environ['SLURM_NODEID']}-{os.environ['SLURMD_NODENAME']}",
+    f"gpus-monitor/{os.environ['SLURM_NODEID']}-{os.environ['SLURMD_NODENAME']}",
 )
 GPUS_MONITOR_PREFIX_PATH = os.getenv("GPUS_MONITOR_PREFIX_PATH", "")
 OUTDIR = os.path.join(GPUS_MONITOR_PREFIX_PATH, GPUS_MONITOR_DIR)

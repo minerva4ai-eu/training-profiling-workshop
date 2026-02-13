@@ -405,7 +405,7 @@ def train(train_args: TrainArgs):
         )
 
     for epoch in range(1, train_args.epochs + 1):
-        nvtx.range_push(f"epoch_{epoch}")
+        nvtx.range_push(f"epoch_{epoch}-rank_{rank}")
 
         print_rank(0, f"\n{'=' * 60}")
         print_rank(0, f"Epoch {epoch}/{train_args.epochs}")

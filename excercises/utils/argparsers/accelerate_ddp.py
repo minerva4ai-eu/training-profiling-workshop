@@ -114,8 +114,7 @@ class AccelerateDDPArguments:
         self.parser.add_argument(
             "--profile-logdir",
             type=str,
-            default="/home/bsc/bsc206334/Workspace/"
-            + f"distributed-training/accelerate_dist/ddp/profiler/{os.environ['SLURM_JOB_ID']}",
+            default=f"./profiler/{os.environ['SLURM_JOB_ID']}",
             help="Directory to save profiling logs",
         )
 
@@ -135,8 +134,8 @@ class AccelerateDDPArguments:
         self.parser.add_argument(
             "--dataloader-num-workers",
             type=int,
-            default=1,
-            help="Number of workers for the dataloader (default: 1)",
+            default=4,
+            help="Number of workers for the dataloader (default: 4)",
         )
 
         self.parser.add_argument(
