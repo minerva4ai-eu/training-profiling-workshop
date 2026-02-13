@@ -120,7 +120,8 @@ case $EXERCISE in
 esac
 
 i=0
-messages_to_add="\nTraining configuration added:\n"
+train_config_message="\nTraining configuration added:\n"
+messages_to_add=""
 while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
     arg="${EXTRA_ARGS[$i]}"
     case "$arg" in
@@ -153,7 +154,11 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
     ((i++))
 done
 
-
+if [[ -z "$messages_to_add" ]]; then
+    messages_to_add="$train_config_message  * Default training configuration will be used.\n    No extra training specific arguments were provided.\n"
+else
+    messages_to_add="$train_config_message $messages_to_add"
+fi
 
 # Slow dataloading is only valid for exercise 1 (DDP)
 if [[ $SLOW_DATALOADING -eq 1 && $EXERCISE -ne 1 ]]; then
