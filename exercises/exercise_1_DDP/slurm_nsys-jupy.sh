@@ -5,9 +5,8 @@
 #SBATCH --error={{LOG_ERR}}
 #SBATCH --nodes={{NUM_NODES}}
 #SBATCH --gres=gpu:{{NUM_GPUS}}
-#SBATCH --tasks-per-node=1
-#SBATCH --cpus-per-task=80
-#SBATCH --time=02:00:00
+#SBATCH --ntasks=1
+#SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --account={{ACCOUNT}}
 #SBATCH --qos={{QUEUE}}
@@ -22,21 +21,22 @@
 
 # Load required modules
 module purge
-module load singularity
-module load cuda/12.6  # Ensure nsys is available
+#module load singularity
+#module load cuda/12.6  # Ensure nsys is available
+module load cuda
 
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 # =============================================
 # NCCL Configuration for Multi-Node InfiniBand
 # =============================================
-export NCCL_NET=IB
-export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
-export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
-export NCCL_NVLS_ENABLE=0
-export NCCL_IB_DISABLE=0
+#export NCCL_NET=IB
+#export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
+#export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
+#export NCCL_NVLS_ENABLE=0
+#export NCCL_IB_DISABLE=0
 export NCCL_DEBUG=INFO
-export NCCL_DEBUG_SUBSYS=INIT
+#export NCCL_DEBUG_SUBSYS=INIT
 
 export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -50,7 +50,8 @@ export TOKENIZERS_PARALLELISM=false
 
 # Dataset and model paths
 DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/gpfs/scratch/bsc99/ai_operations/models_registry/models_registry/Llama-3.1-1B"
+#MODEL_PATH="/gpfs/scratch/bsc99/ai_operations/models_registry/models_registry/Llama-3.1-1B"
+MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
 CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
 
 SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
@@ -69,6 +70,13 @@ nodes_array=($nodes)
 head_node=${nodes_array[0]}
 head_node_ip=$(srun --nodes=$NUM_NODES --ntasks=1 -w "$head_node" hostname --ip-address)
 this_node=$(hostname)
+
+
+for i in "${!nodes_array[@]}"; do
+  nodes_array[$i]="${nodes_array[$i]}.leonardo.local"
+  echo "node $i: ${nodes_array[i]}"
+done
+
 machine_rank=-1
 for i in "${!nodes_array[@]}"; do
   if [[ "${nodes_array[i]}" == "$this_node" ]]; then
@@ -76,7 +84,8 @@ for i in "${!nodes_array[@]}"; do
     break
   fi
 done
-ECHO_PREFIX="[Node $machine_rank]"
+
+ECHO_PREFIX="[Node $this_node]"
 echo "$ECHO_PREFIX Head Node IP: $head_node_ip"
 echo "$ECHO_PREFIX NUM_NODES: $NUM_NODES"
 echo "$ECHO_PREFIX NUM_GPUS: $NUM_GPUS"
@@ -110,7 +119,7 @@ sed -i "s/main_process_ip: ''/main_process_ip: $head_node_ip/g" "$tmp_config"
 sed -i "s/num_machines: 0/num_machines: $NUM_NODES/g" "$tmp_config"
 sed -i "s/num_processes: 0/num_processes: $num_processes/g" "$tmp_config"
 
-singularity_prefix="singularity exec --network host --nv --bind /apps:/apps $CONTAINER_IMAGE"
+singularity_prefix="singularity exec --network host --nv  $CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 

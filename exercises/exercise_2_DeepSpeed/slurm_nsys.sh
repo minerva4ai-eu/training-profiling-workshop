@@ -6,8 +6,8 @@
 #SBATCH --nodes={{NUM_NODES}}
 #SBATCH --gres=gpu:{{NUM_GPUS}}
 #SBATCH --tasks-per-node=1
-#SBATCH --cpus-per-task=80
-#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=32
+#SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --account={{ACCOUNT}}
 #SBATCH --qos={{QUEUE}}
@@ -36,21 +36,22 @@
 
 # Load required modules
 module purge
-module load singularity
-module load cuda/12.6  # Ensure nsys is available
+#module load singularity
+#module load cuda/12.6  # Ensure nsys is available
+module load cuda 
 
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 # =============================================
 # NCCL Configuration for Multi-Node InfiniBand
 # =============================================
-export NCCL_NET=IB
-export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
-export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
-export NCCL_NVLS_ENABLE=0
-export NCCL_IB_DISABLE=0
+#export NCCL_NET=IB
+#export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
+#export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
+#export NCCL_NVLS_ENABLE=0
+#export NCCL_IB_DISABLE=0
+#export NCCL_DEBUG_SUBSYS=INIT
 export NCCL_DEBUG=INFO
-export NCCL_DEBUG_SUBSYS=INIT
 
 export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -64,11 +65,12 @@ export DS_CONFIG_FILE="$EXCERCISE_DIR/ds_config_full-precision.json"
 
 # Dataset and model paths
 DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/apps/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
+MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Llama-3.1-8B"
+MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
 CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
 
 # DeepSpeed specific vars
-export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-4} # Number of gpus per model replica
+export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-2} # Number of gpus per model replica
 MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-4}
 GRADIENT_ACCUMULATION_STEPS=${GRADIENT_ACCUMULATION_STEPS:-1}
 MIXED_PRECISION=${MIXED_PRECISION:-0}
@@ -81,8 +83,8 @@ if [[ $MIXED_PRECISION -eq 1 ]]; then
     fi
 fi
 
-which python
-which nsys
+#which python
+echo "NSYS path: $(which nsys)"
 
 # Fix for:
 # df: .triton/autotune: No such file or directory
@@ -98,6 +100,12 @@ nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )
 nodes_array=($nodes)
 head_node=${nodes_array[0]}
 head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
+
+for i in "${!nodes_array[@]}"; do
+  nodes_array[$i]="${nodes_array[$i]}.leonardo.local"
+  echo "node $i: ${nodes_array[i]}"
+done
+
 
 this_node=$(hostname)
 machine_rank=-1
@@ -178,9 +186,10 @@ echo "$ECHO_PREFIX =============================================="
 # Training Command
 # ============================================================================
 #--bind /dev/infiniband --bind /dev/gdrdrv --bind /etc/infiniband --bind /dev/shm \
-singularity_prefix="singularity exec --network host --nv \
-    --bind /apps:/apps \
-    $CONTAINER_IMAGE"
+singularity_prefix="singularity exec --nv \
+   	--bind /leonardo \
+	--bind /leonardo_work \
+	$CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 

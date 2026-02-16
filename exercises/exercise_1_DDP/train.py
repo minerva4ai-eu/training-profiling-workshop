@@ -1,6 +1,5 @@
 # Libraries used in the distributed training
 import datetime
-import json
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Tuple
@@ -638,13 +637,7 @@ if __name__ == "__main__":
     print(f"[ RANK {rank} ]: args.profile : {args.profile}")
     if args.profile and (rank == 0):
         print(f"[ RANK {rank} ]: " + "Profiler is enabled")
-        if not os.path.exists(args.profile_logdir):
-            print(f"Creating profile log directory: {args.profile_logdir}")
-            os.makedirs(args.profile_logdir)
-        with open(os.path.join(args.profile_logdir, "train_arguments.json"), "w") as f:
-            import json
-
-            json.dump(args.__dict__, f, indent=4)
+        ddp_parser.save_json(os.environ.get("TRAINING_ARGUMENTS_FILE", "ddp_args.json"))
 
     os.environ["PROFILE_LOGDIR"] = str(args.profile_logdir)
 

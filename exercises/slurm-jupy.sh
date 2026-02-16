@@ -32,7 +32,7 @@ usage() {
     echo "  --activation-checkpointing          Enable activation checkpointing for exercise 2 (default: disabled)"
     echo ""
     echo "Example:"
-    echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc -- --slow-dataloading --mixed-precision"
+    echo "  $0 -n 1 -g 4 -e 1 -a tra26_minwinsc -q boost_qos_dbg -p boost_usr_prod -- --slow-dataloading --mixed-precision"
     echo ""
     exit 1
 }
@@ -40,9 +40,9 @@ usage() {
 # Default values
 NUM_NODES=1
 NUM_GPUS=4
-QUEUE="acc_bench"
-ACCOUNT="bsc99"
-PARTITION="acc"
+QUEUE="boost_qos_dbg"
+ACCOUNT="tra26_minwinsc"
+PARTITION="boost_usr_prod"
 EXERCISE=""
 
 # Parse command-line arguments
@@ -103,17 +103,17 @@ fi
 # Set JOB_SCRIPT based on exercise number
 case $EXERCISE in
     1)
-        JOB_SCRIPT="slurm_nsys.sh"
+        JOB_SCRIPT="slurm_nsys-jupy.sh"
         EXERCISE_NAME="DDP"
         EXCERCISE_DIR="./excercise_1_DDP"
         ;;
     2)
-        JOB_SCRIPT="slurm_nsys.sh"
+        JOB_SCRIPT="slurm_nsys-jupy.sh"
         EXERCISE_NAME="DeepSpeed"
         EXCERCISE_DIR="./excercise_2_DeepSpeed"
         ;;
     3)
-        JOB_SCRIPT="slurm_nsys.sh"
+        JOB_SCRIPT="slurm_nsys-jupy.sh"
         EXERCISE_NAME="MegatronLM"
         EXCERCISE_DIR="./excercise_3_MegatronLM"
         ;;
@@ -227,10 +227,8 @@ echo -e "  ${MAGENTA}Job Script:${RESET} ${BOLD}$tmp_job_script${RESET}"
 echo -e "${BLUE}$messages_to_add${RESET}"
 echo -e "${BOLD}${CYAN}============================================================${RESET}"
 
-JOB_ID=$(sbatch --export=ALL "$tmp_job_script" | awk '{print $NF}')
-
-echo -e "${BOLD}${GREEN}Submitted job with ID=${RESET}${YELLOW}$JOB_ID${RESET}"
-echo ""
+bash $tmp_job_script
+JOB_ID=$SLURM_JOB_ID
 echo -e "${CYAN}Monitor with:${RESET} ${BOLD}squeue -j $JOB_ID${RESET}"
 echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXCERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
 echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXCERCISE_DIR/profiler/$JOB_ID-nsys/${RESET}"

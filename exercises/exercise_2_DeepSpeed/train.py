@@ -17,6 +17,7 @@ Usage:
 """
 
 import os
+import sys
 from argparse import Namespace
 from dataclasses import dataclass
 from datetime import datetime
@@ -285,6 +286,8 @@ def train_epoch(train_args: TrainArgs, epoch: int):
     active_start = skip_first + wait + warmup
     active_end = active_start + active
 
+    profile_early_stop = False
+
     if train_args.profile:
         print_rank(0, "Profiler is enabled")
         print_rank(
@@ -295,6 +298,13 @@ def train_epoch(train_args: TrainArgs, epoch: int):
 
     train_loader_iter = iter(train_args.train_loader)
     for batch_idx in range(len(train_args.train_loader)):
+        if train_args.profile and profile_early_stop:
+            print_rank(
+                rank,
+                f"[nsys] Profiler capture complete, exiting training loop at batch {batch_idx}",
+            )
+            sys.exit(0)  # Exit after profiling window to avoid extra overhead
+
         # Start nsys capture at the beginning of active window
         if train_args.profile and batch_idx == active_start:
             print_rank(
@@ -354,6 +364,7 @@ def train_epoch(train_args: TrainArgs, epoch: int):
                 rank, f"[nsys] Stopping CUDA profiler capture at batch {batch_idx}"
             )
             torch.cuda.cudart().cudaProfilerStop()
+            profile_early_stop = True
 
         # Update tqdm progress bar with current metrics (rank 0 only)
         if train_args.accelerator.is_main_process:
@@ -626,15 +637,10 @@ if __name__ == "__main__":
     # Setup profiling directory
     if args.profile and (int(os.environ["RANK"]) == 0):
         print(f"[ RANK {rank} ]: Profiler is enabled")
-        if not os.path.exists(args.profile_logdir):
-            print(f"Creating profile log directory: {args.profile_logdir}")
-            os.makedirs(args.profile_logdir)
-        with open(os.path.join(args.profile_logdir, "train_arguments.json"), "w") as f:
-            import json
+        deepspeed_parser.save_json(
+            os.environ.get("TRAINING_ARGUMENTS_FILE", "deepspeed_train_args.json")
+        )
 
-            json.dump(args.__dict__, f, indent=4)
-
-    os.environ["PROFILE_LOGDIR"] = str(args.profile_logdir)
     if args.enable_checkpoints:
         os.environ["CHECKPOINTS_DIR"] = str(args.checkpoints_dir)
 
