@@ -17,7 +17,6 @@ Usage:
 """
 
 import os
-import sys
 from argparse import Namespace
 from dataclasses import dataclass
 from datetime import datetime
@@ -35,6 +34,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 from utils.argparsers.accelerate_deepspeed import AccelerateDeepSpeedArgParser
+from utils.exceptions import ProfilingEarlyStop
 from utils.utils import (
     cleanup_nccl,
     log_cuda_memory,
@@ -303,7 +303,8 @@ def train_epoch(train_args: TrainArgs, epoch: int):
                 rank,
                 f"[nsys] Profiler capture complete, exiting training loop at batch {batch_idx}",
             )
-            sys.exit(0)  # Exit after profiling window to avoid extra overhead
+            dist.barrier()  # Ensure all ranks reach this point before exiting
+            raise ProfilingEarlyStop()  # Signal to exit training loop after profiling window
 
         # Start nsys capture at the beginning of active window
         if train_args.profile and batch_idx == active_start:
@@ -646,4 +647,12 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.seed)
 
-    deepspeed_main(args)
+    try:
+        deepspeed_main(args)
+    except ProfilingEarlyStop as e:
+        print_rank(
+            rank,
+            f"Profiling early stop triggered: {e}",
+        )
+    except Exception as e:
+        print_rank(rank, f"An error occurred: {e}")

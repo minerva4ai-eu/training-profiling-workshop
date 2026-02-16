@@ -9,7 +9,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --account={{ACCOUNT}}
-#SBATCH --qos={{QUEUE}}
+##SBATCH --qos={{QUEUE}}
 #SBATCH --partition={{PARTITION}}
 
 # ============================================================
@@ -42,8 +42,8 @@ export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
-#cd "$EXCERCISE_DIR" || { echo "Error: Exercise directory not found: $EXCERCISE_DIR"; exit 1; }
-export ACCELERATE_CONFIG_FILE="$EXCERCISE_DIR/ddp_config.yml"
+#cd "$EXERCISE_DIR" || { echo "Error: Exercise directory not found: $EXERCISE_DIR"; exit 1; }
+export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/ddp_config.yml"
 
 export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
@@ -124,7 +124,7 @@ singularity_prefix="singularity exec --network host --nv \
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 
-python_modulde="excercise_1_DDP.train"
+python_modulde="exercise_1_DDP.train"
 train_command="$singularity_prefix accelerate launch \
     --config_file $tmp_config \
     --rdzv_backend=c10d \
@@ -153,7 +153,7 @@ train_command="$train_command $TRAIN_CLI_ARGS"
 # NSYS Output Directory
 # ============================================================================
 MODEL_NAME=$(basename "$MODEL_PATH")
-export PROFILER_PREFIX_PATH="$EXCERCISE_DIR/profiler/\
+export PROFILER_PREFIX_PATH="$EXERCISE_DIR/profiler/\
 $MODEL_NAME-$SLURM_JOB_ID-\
 n$SLURM_NNODES-\
 g4-\

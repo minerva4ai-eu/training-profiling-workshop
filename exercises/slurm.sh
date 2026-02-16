@@ -4,9 +4,9 @@
 # SLURM Job Submission Wrapper Script
 # ============================================================
 
-# Ensure script is run from excercises/ directory
-if [[ ! "$(basename "$PWD")" == "excercises" ]]; then
-    echo "Error: This script must be run from the excercises/ directory"
+# Ensure script is run from exercises/ directory
+if [[ ! "$(basename "$PWD")" == "exercises" ]]; then
+    echo "Error: This script must be run from the 'exercises/' directory"
     echo "Current directory: $PWD"
     exit 1
 fi
@@ -29,7 +29,8 @@ usage() {
     echo "  --mixed-precision                   Enable mixed precision training using 'bf16' (default: disabled)"
     echo "  --micro-batch-size N                Set micro batch size to N (default: 4)"
     echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
-    echo "  --activation-checkpointing          Enable activation checkpointing for exercise 2 (default: disabled)"
+    echo "  --activation-checkpointing          Enable activation/gradient checkpointing (default: disabled)"
+    echo "  --ds-hpz-partition N                Set DeepSpeed HPZ partition size to N, for exercise 2 (DeepSpeed) only. Refers to number of GPUs per model replica (default: 2)"
     echo ""
     echo "Example:"
     echo "  $0 -n 1 -g 4 -e 1 -a tra26_minwinsc -q boost_qos_dbg -p boost_usr_prod -- --slow-dataloading --mixed-precision"
@@ -105,17 +106,17 @@ case $EXERCISE in
     1)
         JOB_SCRIPT="slurm_nsys.sh"
         EXERCISE_NAME="DDP"
-        EXCERCISE_DIR="./excercise_1_DDP"
+        EXERCISE_DIR="./exercise_1_DDP"
         ;;
     2)
         JOB_SCRIPT="slurm_nsys.sh"
         EXERCISE_NAME="DeepSpeed"
-        EXCERCISE_DIR="./excercise_2_DeepSpeed"
+        EXERCISE_DIR="./exercise_2_DeepSpeed"
         ;;
     3)
         JOB_SCRIPT="slurm_nsys.sh"
         EXERCISE_NAME="MegatronLM"
-        EXCERCISE_DIR="./excercise_3_MegatronLM"
+        EXERCISE_DIR="./exercise_3_MegatronLM"
         ;;
 esac
 
@@ -146,6 +147,11 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
         --activation-checkpointing)
             export ACTIVATION_CHECKPOINTING=1 
             messages_to_add+="  * Activation checkpointing enabled!\n" ;;
+        --ds-hpz-partition)
+            ((i++))
+            export HPZ_PARTITION_SIZE="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * DeepSpeed HPZ partition size set to $HPZ_PARTITION_SIZE.\n"
+            ;;
         *)
             echo "  !! Error: Unknown option $arg !!"
             usage
@@ -160,22 +166,33 @@ else
     messages_to_add="$train_config_message $messages_to_add"
 fi
 
+
 # Slow dataloading is only valid for exercise 1 (DDP)
 if [[ $SLOW_DATALOADING -eq 1 && $EXERCISE -ne 1 ]]; then
     echo "Error: --slow-dataloading option is only valid for exercise 1"
     usage
 fi
 
+if [[ $EXERCISE -eq 1 && -n "$ACTIVATION_CHECKPOINTING" ]]; then
+    echo "Error: --activation-checkpointing is not a valid option for exercise $EXERCISE !!"
+    usage
+fi
+
+if [[ -n "$HPZ_PARTITION_SIZE" && $EXERCISE -ne 2 ]]; then
+    echo "Error: --ds-hpz-partition option is only valid for exercise 2 (DeepSpeed)"
+    usage
+fi
+
 # Check if job script exists
-if [[ ! -f "$EXCERCISE_DIR/$JOB_SCRIPT" ]]; then
-    echo "Error: Job script not found: $EXCERCISE_DIR/$JOB_SCRIPT"
+if [[ ! -f "$EXERCISE_DIR/$JOB_SCRIPT" ]]; then
+    echo "Error: Job script not found: $EXERCISE_DIR/$JOB_SCRIPT"
     exit 1
 fi
 
 
 RANDOM_PREFIX=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 13; echo)
-tmp_job_script="$EXCERCISE_DIR/$RANDOM_PREFIX-$JOB_SCRIPT"
-cp "$EXCERCISE_DIR/$JOB_SCRIPT" "$tmp_job_script"
+tmp_job_script="$EXERCISE_DIR/$RANDOM_PREFIX-$JOB_SCRIPT"
+cp "$EXERCISE_DIR/$JOB_SCRIPT" "$tmp_job_script"
 
 # Ensure tmp_config is always deleted on exit (success, failure, or signal)
 cleanup() {
@@ -194,7 +211,7 @@ export QUEUE
 export ACCOUNT
 export PARTITION
 export EXERCISE_NAME
-export EXCERCISE_DIR
+export EXERCISE_DIR
 export RANDOM_PREFIX
 
 # Apply placeholders substitution
@@ -203,8 +220,8 @@ sed -i "s/gres=gpu:{{NUM_GPUS}}/gres=gpu:$NUM_GPUS/g"  "$tmp_job_script"
 sed -i "s/account={{ACCOUNT}}/account=$ACCOUNT/g"  "$tmp_job_script"
 sed -i "s/qos={{QUEUE}}/qos=$QUEUE/g"  "$tmp_job_script"
 sed -i "s/partition={{PARTITION}}/partition=$PARTITION/g"  "$tmp_job_script"
-sed -i "s|output={{LOG_OUT}}|output=$EXCERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.out|g"  "$tmp_job_script"
-sed -i "s|error={{LOG_ERR}}|error=$EXCERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.err|g"  "$tmp_job_script"
+sed -i "s|output={{LOG_OUT}}|output=$EXERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.out|g"  "$tmp_job_script"
+sed -i "s|error={{LOG_ERR}}|error=$EXERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.err|g"  "$tmp_job_script"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -232,13 +249,13 @@ JOB_ID=$(sbatch --export=ALL "$tmp_job_script" | awk '{print $NF}')
 echo -e "${BOLD}${GREEN}Submitted job with ID=${RESET}${YELLOW}$JOB_ID${RESET}"
 echo ""
 echo -e "${CYAN}Monitor with:${RESET} ${BOLD}squeue -j $JOB_ID${RESET}"
-echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXCERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
-echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXCERCISE_DIR/profiler/$JOB_ID-nsys/${RESET}"
+echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
+echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXERCISE_DIR/profiler/$JOB_ID-nsys/${RESET}"
 
 # Restore placeholders
-# EXCERCISE_DIR_ESCAPED=$(echo "$EXCERCISE_DIR" | sed 's/\./\\./g')
-# sed -i "s|output=$EXCERCISE_DIR_ESCAPED/logs/nodes-$NUM_NODES/%j/log\.out|output={{LOG_OUT}}|g"  "$JOB_SCRIPT"
-# sed -i "s|error=$EXCERCISE_DIR_ESCAPED/logs/nodes-$NUM_NODES/%j/log\.err|error={{LOG_ERR}}|g"  "$JOB_SCRIPT"
+# EXERCISE_DIR_ESCAPED=$(echo "$EXERCISE_DIR" | sed 's/\./\\./g')
+# sed -i "s|output=$EXERCISE_DIR_ESCAPED/logs/nodes-$NUM_NODES/%j/log\.out|output={{LOG_OUT}}|g"  "$JOB_SCRIPT"
+# sed -i "s|error=$EXERCISE_DIR_ESCAPED/logs/nodes-$NUM_NODES/%j/log\.err|error={{LOG_ERR}}|g"  "$JOB_SCRIPT"
 # sed -i "s/nodes=$NUM_NODES/nodes={{NUM_NODES}}/g"  "$JOB_SCRIPT"
 # sed -i "s/gres=gpu:$NUM_GPUS/gres=gpu:{{NUM_GPUS}}/g"  "$JOB_SCRIPT"
 # sed -i "s/account=$ACCOUNT/account={{ACCOUNT}}/g"  "$JOB_SCRIPT"

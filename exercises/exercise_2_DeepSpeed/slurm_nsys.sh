@@ -10,7 +10,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --account={{ACCOUNT}}
-#SBATCH --qos={{QUEUE}}
+##SBATCH --qos={{QUEUE}}
 #SBATCH --partition={{PARTITION}}
 
 
@@ -42,15 +42,6 @@ module load cuda
 
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
-# =============================================
-# NCCL Configuration for Multi-Node InfiniBand
-# =============================================
-#export NCCL_NET=IB
-#export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
-#export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
-#export NCCL_NVLS_ENABLE=0
-#export NCCL_IB_DISABLE=0
-#export NCCL_DEBUG_SUBSYS=INIT
 export NCCL_DEBUG=INFO
 
 export HF_EVALUATE_OFFLINE=1
@@ -60,12 +51,11 @@ export HF_DATASETS_OFFLINE=1
 export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
-export ACCELERATE_CONFIG_FILE="$EXCERCISE_DIR/accelerate_config.yaml"
-export DS_CONFIG_FILE="$EXCERCISE_DIR/ds_config_full-precision.json"
+export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/accelerate_config.yaml"
+export DS_CONFIG_FILE="$EXERCISE_DIR/ds_config_full-precision.json"
 
 # Dataset and model paths
 DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Llama-3.1-8B"
 MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
 CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
 
@@ -77,9 +67,9 @@ MIXED_PRECISION=${MIXED_PRECISION:-0}
 ACTIVATION_CHECKPOINTING=${ACTIVATION_CHECKPOINTING:-0}
 
 if [[ $MIXED_PRECISION -eq 1 ]]; then 
-    export DS_CONFIG_FILE="$EXCERCISE_DIR/ds_config_mixed-precision_no-activation-checkpointing.json" 
+    export DS_CONFIG_FILE="$EXERCISE_DIR/ds_config_mixed-precision_no-activation-checkpointing.json" 
     if [[ $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
-        export DS_CONFIG_FILE="$EXCERCISE_DIR/ds_config_mixed-precision.json"
+        export DS_CONFIG_FILE="$EXERCISE_DIR/ds_config_mixed-precision.json"
     fi
 fi
 
@@ -193,7 +183,7 @@ singularity_prefix="singularity exec --nv \
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 
-python_module="excercise_2_DeepSpeed.train"
+python_module="exercise_2_DeepSpeed.train"
 train_command="$singularity_prefix accelerate launch \
     --config_file $tmp_accelerate_config \
     --rdzv_backend=c10d \
@@ -215,7 +205,7 @@ train_command="$singularity_prefix accelerate launch \
 # NSYS Output Directory
 # ============================================================================
 MODEL_NAME=$(basename "$MODEL_PATH")
-export PROFILER_PREFIX_PATH="$EXCERCISE_DIR/profiler/\
+export PROFILER_PREFIX_PATH="$EXERCISE_DIR/profiler/\
 $MODEL_NAME-$SLURM_JOB_ID-\
 n$SLURM_NNODES-\
 g4-\
@@ -245,13 +235,13 @@ mkdir -p "$NSYS_OUTPUT_DIR"
 # ============================================================================
 
 # Profiler schedule: skip_first + wait + warmup = start of active window
-export PROFILE_SKIP_FIRST=10
+export PROFILE_SKIP_FIRST=50
 export PROFILE_WAIT=1
 export PROFILE_WARMUP=5
 export PROFILE_STEPS_INTERVAL=20
 
 NSYS_OPTS=" \
-    --trace=cuda,nvtx,osrt,cudnn,cublas \
+    --trace=cpu,cuda,nvtx,osrt,cudnn,cublas \
     --cuda-memory-usage=true \
     --gpuctxsw=true \
     --gpu-metrics-device=all \

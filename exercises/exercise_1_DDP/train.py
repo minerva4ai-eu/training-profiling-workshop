@@ -16,6 +16,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LRScheduler
 from transformers.optimization import get_linear_schedule_with_warmup
 from utils.argparsers.accelerate_ddp import AccelerateDDPArguments
+from utils.exceptions import ProfilingEarlyStop
 from utils.utils import (
     accelerate_setup_model,
     cleanup_nccl,
@@ -257,6 +258,7 @@ def train_epoch(
     # Calculate when active window starts and ends
     active_start = skip_first + wait + warmup
     active_end = active_start + active
+    profile_early_stop = False  # Whether to stop training after profiling window
 
     if profile:
         print_rank(0, "Profiler is enabled")
@@ -277,6 +279,14 @@ def train_epoch(
     nvtx.range_push(f"epoch_{epoch}-rank_{rank}")
     train_loader_iter = iter(train_loader)
     for i in range(len(train_loader)):
+        if profile and profile_early_stop:
+            print_rank(
+                rank,
+                f"[nsys] Profiler capture complete, exiting training loop at batch {i}",
+            )
+            dist.barrier()  # Ensure all ranks reach this point before exiting
+            raise ProfilingEarlyStop()  # Signal to exit training loop after profiling window
+
         # Start nsys capture at the beginning of active window
         if profile and i == active_start:
             print_rank(rank, f"[nsys] Starting CUDA profiler capture at batch {i}")
@@ -334,6 +344,7 @@ def train_epoch(
         if profile and i == (active_end - 1):
             print_rank(rank, f"[nsys] Stopping CUDA profiler capture at batch {i}")
             torch.cuda.cudart().cudaProfilerStop()
+            profile_early_stop = True
 
         if accelerator.is_main_process:
             inner_pbar.update(1)
@@ -647,4 +658,12 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
 
     # print(args)
-    ddp_main(args)
+    try:
+        ddp_main(args)
+    except ProfilingEarlyStop as e:
+        print_rank(
+            rank,
+            f"Profiling early stop triggered: {e}",
+        )
+    except Exception as e:
+        print_rank(rank, f"An error occurred: {e}")
