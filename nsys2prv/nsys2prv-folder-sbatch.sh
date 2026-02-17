@@ -1,18 +1,20 @@
 #!/bin/bash
-#SBATCH --job-name=nsys2prv-conversion
-#SBATCH --error=slurm_logs/nsys2prv-conversion/%j.err
-#SBATCH --output=slurm_logs/nsys2prv-conversion/%j.out
-
+#SBATCH --job-name=nsys2prv_folder
+#SBATCH --output=/leonardo/home/userexternal/apaliour/training-profiling-workshop/nsys2prv/slurm-logs/%j/log.out
+#SBATCH --error=/leonardo/home/userexternal/apaliour/training-profiling-workshop/nsys2prv/slurm-logs/%j/log.err
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:4
 #SBATCH --tasks-per-node=1
-#SBATCH --cpus-per-task=80
+#SBATCH --cpus-per-task=32
+#SBATCH --time=00:30:00
+#SBATCH --exclusive
+#SBATCH --account=tra26_minwinsc
+#SBATCH --partition=boost_usr_prod
 
-#SBATCH --qos=acc_bench
-#SBATCH --partition=acc
-#SBATCH --account=bsc99
+module purge
+module load cuda/12.6
 
-#SBATCH --time=01:00:00
+CONTAINER="/leonardo/home/userexternal/apaliour/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
 
 set -euo pipefail
 
@@ -48,7 +50,6 @@ if [[ $# -lt 1 ]]; then
 fi
 
 module purge
-module load singularity
 module load cuda/12.6 # -> nsys version 2024.6.2 compatible with nemo25.02 cuda/nsys version
 
 # Read the first positional argument as the folder path
@@ -89,18 +90,16 @@ SINGULARITYENV_NSYS_HOME=$(which nsys)
 SINGULARITYENV_NSYS_HOME=$(echo "$SINGULARITYENV_NSYS_HOME" | sed 's|bin/nsys||')
 export SINGULARITYENV_NSYS_HOME
 export SINGULARITYENV_APPEND_PATH="$(which nsys)"
-if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
-    echo "Error: This script must be run from the nsys2prv/ directory"
-    echo "Current directory: $PWD"
-    exit 1
-fi
+#if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
+#    echo "Error: This script must be run from the nsys2prv/ directory"
+#    echo "Current directory: $PWD"
+#    exit 1
+#fi
 
-CONTAINER="/gpfs/scratch/bsc99/ai_operations/AI_profiling/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
 
-SINGU_PREFIX="singularity exec --network host --nv --bind /apps:/apps $CONTAINER"
+SINGU_PREFIX="singularity exec --nv -B leonard/ $CONTAINER"
 
 $SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
-
 
 
 INPUT_DIR="$(realpath "$INPUT_DIR")"

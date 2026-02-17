@@ -33,7 +33,6 @@ if [[ $# -lt 1 ]]; then
 fi
 
 module purge
-module load singularity
 module load cuda/12.6 # -> nsys version 2024.6.2 compatible with nemo25.02 cuda/nsys version
 
 # Read the first positional argument as the folder path
@@ -74,15 +73,15 @@ SINGULARITYENV_NSYS_HOME=$(which nsys)
 SINGULARITYENV_NSYS_HOME=$(echo "$SINGULARITYENV_NSYS_HOME" | sed 's|bin/nsys||')
 export SINGULARITYENV_NSYS_HOME
 export SINGULARITYENV_APPEND_PATH="$(which nsys)"
-if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
-    echo "Error: This script must be run from the nsys2prv/ directory"
-    echo "Current directory: $PWD"
-    exit 1
-fi
+#if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
+#    echo "Error: This script must be run from the nsys2prv/ directory"
+#    echo "Current directory: $PWD"
+#    exit 1
+#fi
 
-CONTAINER="/gpfs/scratch/bsc99/ai_operations/AI_profiling/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
+CONTAINER="/leonardo/home/userexternal/apaliour/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
 
-SINGU_PREFIX="singularity exec --network host --nv --bind /apps:/apps $CONTAINER"
+SINGU_PREFIX="singularity exec --nv -B /leonardo $CONTAINER"
 
 $SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
 
