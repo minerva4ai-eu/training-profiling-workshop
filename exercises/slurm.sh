@@ -20,7 +20,7 @@ usage() {
     echo "  -q, --queue           Queue/QOS for SLURM job (default: acc_bench)"
     echo "  -a, --account         Account name (default: bsc99)"
     echo "  -p, --partition       Partition on HPC (default: acc)"
-    echo "  -e, --exercise        Exercise number (1, 2, or 3) (required)"
+    echo "  -e, --exercise        Exercise number (0, 1, 2, or 3) (required)"
     echo "  -h, --help            Show this help message"
     echo ""
     echo "Extra arguments after '--' will be passed to the training script."
@@ -97,12 +97,17 @@ if [[ -z "$EXERCISE" ]]; then
 fi
 
 if [[ ! "$EXERCISE" =~ ^[0-3]$ ]]; then
-    echo "Error: Exercise number must be 1, 2, or 3"
+    echo "Error: Exercise number must be 0, 1, 2, or 3"
     exit 1
 fi
 
 # Set JOB_SCRIPT based on exercise number
 case $EXERCISE in
+    0) 
+        JOB_SCRIPT="run_tests.sh"
+        EXERCISE_NAME="Communication Tests"
+        EXERCISE_DIR="./exercise_0_Communication_Tests"
+        ;;
     1)
         JOB_SCRIPT="slurm_nsys.sh"
         EXERCISE_NAME="DDP"
@@ -121,6 +126,13 @@ case $EXERCISE in
 esac
 
 i=0
+
+# if exercise 0, no extra arguments should be provided
+if [[ $EXERCISE -eq 0 && ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+    echo "Error: Exercise 0 does not accept extra arguments. Please remove the following extra arguments: ${EXTRA_ARGS[*]}"
+    usage
+fi
+
 train_config_message="\nTraining configuration added:\n"
 messages_to_add=""
 while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
@@ -170,11 +182,13 @@ fi
 # Slow dataloading is only valid for exercise 1 (DDP)
 if [[ $SLOW_DATALOADING -eq 1 && $EXERCISE -ne 1 ]]; then
     echo "Error: --slow-dataloading option is only valid for exercise 1"
+    echo ""
     usage
 fi
 
 if [[ $EXERCISE -eq 1 && -n "$ACTIVATION_CHECKPOINTING" ]]; then
     echo "Error: --activation-checkpointing is not a valid option for exercise $EXERCISE !!"
+    echo ""
     usage
 fi
 
