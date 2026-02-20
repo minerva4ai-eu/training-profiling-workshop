@@ -132,7 +132,7 @@ def handle_sigterm(signum, frame):
     logger.info("Ploting metrics...")
 
     gpus_metrics["script_timestamp_time"] = gpus_metrics["script_timestamp"].apply(
-        lambda x: x.time()
+        lambda x: x.time().strftime("%H:%M:%S")
     )
     # gpus_metrics["script_timestamp"] = gpus_metrics["script_timestamp"].apply(
     #    lambda x: x - gpus_metrics.loc[0, "script_timestamp"]
@@ -150,7 +150,7 @@ def handle_sigterm(signum, frame):
     # gpus_metrics["ts_hour"] = gpus_metrics.script_timestamp.apply(lambda x: x.time())
     # gpus_metrics = gpus_metrics.sort_values(by="script_timestamp")
 
-    x = "script_timestamp"
+    x = "script_timestamp_time"
     hue = "gpu_index"
 
     # Calculate energy consumption per GPU and get average
