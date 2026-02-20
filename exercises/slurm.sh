@@ -31,6 +31,11 @@ usage() {
     echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
     echo "  --activation-checkpointing          Enable activation/gradient checkpointing (default: disabled)"
     echo "  --ds-hpz-partition N                Set DeepSpeed HPZ partition size to N, for exercise 2 (DeepSpeed) only. Refers to number of GPUs per model replica (default: 2)"
+    echo "  --ds-stage2                         Use DeepSpeed stage 2 partitioning instead of stage 3, for exercise 2 (DeepSpeed) only (default: stage 3)"
+    echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
+    echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
+    echo "  --no-profile                        Disable profiling with NSYS (default: profiling enabled)"
+    echo "  --nsys2prv                          After profiling, automatically translate NSYS output to Paraver traces using nsys2prv (default: disabled)"
     echo ""
     echo "Example:"
     echo "  $0 -n 1 -g 4 -e 1 -a tra26_minwinsc -q boost_qos_dbg -p boost_usr_prod -- --slow-dataloading --mixed-precision"
@@ -104,7 +109,7 @@ fi
 # Set JOB_SCRIPT based on exercise number
 case $EXERCISE in
     0) 
-        JOB_SCRIPT="run_tests.sh"
+        JOB_SCRIPT="tests.sh"
         EXERCISE_NAME="Communication Tests"
         EXERCISE_DIR="./exercise_0_Communication_Tests"
         ;;
@@ -164,6 +169,28 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export HPZ_PARTITION_SIZE="${EXTRA_ARGS[$i]}"
             messages_to_add+="  * DeepSpeed HPZ partition size set to $HPZ_PARTITION_SIZE.\n"
             ;;
+        --ds-stage2)
+            export DS_STAGE2=1
+            messages_to_add+="  * DeepSpeed using stage 2 partitioning!\n"
+            ;;
+        --no-profile)
+            export NO_PROFILE=1
+            messages_to_add+="  * Profiling disabled!\n"
+            ;;
+        --tp)
+            ((i++))
+            export TP="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Tensor parallelism set to $TP!\n"
+            ;;
+        --pp)
+            ((i++))
+            export PP="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Pipeline parallelism set to $PP!\n"
+            ;;
+        --nsys2prv)
+            export NSYS2PRV=1
+            messages_to_add+="  * nsys2prv translation enabled!\n"
+            ;;
         *)
             echo "  !! Error: Unknown option $arg !!"
             usage
@@ -175,7 +202,7 @@ done
 if [[ -z "$messages_to_add" ]]; then
     messages_to_add="$train_config_message  * Default training configuration will be used.\n    No extra training specific arguments were provided.\n"
 else
-    messages_to_add="$train_config_message $messages_to_add"
+    messages_to_add="$train_config_message$messages_to_add"
 fi
 
 
@@ -194,14 +221,43 @@ fi
 
 if [[ -n "$HPZ_PARTITION_SIZE" && $EXERCISE -ne 2 ]]; then
     echo "Error: --ds-hpz-partition option is only valid for exercise 2 (DeepSpeed)"
+    echo ""
+    usage
+fi
+
+if [[ -n "$DS_STAGE2" && $EXERCISE -ne 2 ]]; then
+    echo "Error: --ds-stage2-partition option is only valid for exercise 2 (DeepSpeed)"
+    echo ""
     usage
 fi
 
 # Check if job script exists
 if [[ ! -f "$EXERCISE_DIR/$JOB_SCRIPT" ]]; then
     echo "Error: Job script not found: $EXERCISE_DIR/$JOB_SCRIPT"
+    echo "Contact the workshop organizers to resolve this issue."
+    echo ""
     exit 1
 fi
+
+if [[ -n $PP ]]; then
+    if [[ $EXERCISE -ne 3 ]]; then
+        echo "Error: --pp option is only valid for exercise 3 (MegatronLM)"
+        echo ""
+        usage
+    fi
+    if [[ $PP -gt $NUM_NODES ]]; then
+        echo "Error: Invalid value for --pp option. Must be between 1 and the number of nodes ($NUM_NODES)."
+        echo ""
+        usage
+    fi
+fi
+
+if [[ -n $TP && $EXERCISE -ne 3 ]]; then
+    echo "Error: --tp option is only valid for exercise 3 (MegatronLM)"
+    echo ""
+    usage
+fi
+
 
 
 RANDOM_PREFIX=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 13; echo)
@@ -246,6 +302,7 @@ CYAN='\033[1;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+
 echo -e "${BOLD}${CYAN}============================================================${RESET}"
 echo -e "${BOLD}${GREEN}NSYS Profiling Configuration${RESET} (${YELLOW}Exercise $EXERCISE - $EXERCISE_NAME${RESET}):"
 echo -e "  ${MAGENTA}Number of Nodes:${RESET} ${BOLD}$NUM_NODES${RESET}"
@@ -258,6 +315,16 @@ echo -e "  ${MAGENTA}Job Script:${RESET} ${BOLD}$tmp_job_script${RESET}"
 echo -e "${BLUE}$messages_to_add${RESET}"
 echo -e "${BOLD}${CYAN}============================================================${RESET}"
 
+if [[ $EXERCISE -eq 0 ]]; then
+    echo -e "${BOLD}${YELLOW}Running communication tests for intra-node...${RESET}"
+    srun --nodes=$NUM_NODES \
+        --ntasks-per-node=1 \
+        --cpus-per-task=32 --gres=gpu:0 \
+        --account=$ACCOUNT --partition=$PARTITION \
+        "$EXERCISE_DIR/$JOB_SCRIPT"
+    echo "Communication tests completed!"
+    exit 0
+fi
 JOB_ID=$(sbatch --export=ALL "$tmp_job_script" | awk '{print $NF}')
 
 echo -e "${BOLD}${GREEN}Submitted job with ID=${RESET}${YELLOW}$JOB_ID${RESET}"
@@ -265,13 +332,3 @@ echo ""
 echo -e "${CYAN}Monitor with:${RESET} ${BOLD}squeue -j $JOB_ID${RESET}"
 echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
 echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXERCISE_DIR/profiler/$JOB_ID-nsys/${RESET}"
-
-# Restore placeholders
-# EXERCISE_DIR_ESCAPED=$(echo "$EXERCISE_DIR" | sed 's/\./\\./g')
-# sed -i "s|output=$EXERCISE_DIR_ESCAPED/logs/nodes-$NUM_NODES/%j/log\.out|output={{LOG_OUT}}|g"  "$JOB_SCRIPT"
-# sed -i "s|error=$EXERCISE_DIR_ESCAPED/logs/nodes-$NUM_NODES/%j/log\.err|error={{LOG_ERR}}|g"  "$JOB_SCRIPT"
-# sed -i "s/nodes=$NUM_NODES/nodes={{NUM_NODES}}/g"  "$JOB_SCRIPT"
-# sed -i "s/gres=gpu:$NUM_GPUS/gres=gpu:{{NUM_GPUS}}/g"  "$JOB_SCRIPT"
-# sed -i "s/account=$ACCOUNT/account={{ACCOUNT}}/g"  "$JOB_SCRIPT"
-# sed -i "s/qos=$QUEUE/qos={{QUEUE}}/g"  "$JOB_SCRIPT"
-# sed -i "s/partition=$PARTITION/partition={{PARTITION}}/g"  "$JOB_SCRIPT"
