@@ -666,4 +666,4 @@ if __name__ == "__main__":
             f"Profiling early stop triggered: {e}",
         )
     except Exception as e:
-        print_rank(rank, f"An error occurred: {e}")
+        raise e

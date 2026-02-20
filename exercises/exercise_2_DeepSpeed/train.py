@@ -1,21 +1,3 @@
-"""
-DeepSpeed ZeRO-3 Training Script with Accelerate
-=================================================
-
-This script provides distributed training using DeepSpeed ZeRO-3 with
-hierarchical partitioning (hpZ) for fine-grained control over model sharding.
-
-Key difference from FSDP:
-- ZeRO-3 with hpZ allows specifying exactly how many GPUs share sharded parameters
-- Example: 32 GPUs with hpZ=8 → 4 data parallel replicas, each sharded across 8 GPUs
-
-Usage:
-    accelerate launch --config_file accelerate_config.yaml \\
-        -m accelerate_dist.deepspeed.train_deepspeed \\
-        --model-path /path/to/model \\
-        --data-path /path/to/data.json
-"""
-
 import os
 from argparse import Namespace
 from dataclasses import dataclass
@@ -35,11 +17,7 @@ from transformers import (
 )
 from utils.argparsers.accelerate_deepspeed import AccelerateDeepSpeedArgParser
 from utils.exceptions import ProfilingEarlyStop
-from utils.utils import (
-    cleanup_nccl,
-    log_cuda_memory,
-    print_rank,
-)
+from utils.utils import accelerate2torch_type, cleanup_nccl, log_cuda_memory, print_rank
 
 
 @dataclass
@@ -66,6 +44,7 @@ class TrainArgs:
 
 
 def accelerate_setup_model(
+    accelerator: Accelerator,
     model_path: str,
     tokenizer,
 ):
@@ -84,15 +63,16 @@ def accelerate_setup_model(
         # attn_implementation="flash_attention_2",
         use_cache=False,  # Disable KV cache for training
         low_cpu_mem_usage=True,
+        torch_dtype=accelerate2torch_type[accelerator.mixed_precision],
     )
 
     # Resize embeddings if tokenizer has more tokens
     model.resize_token_embeddings(len(tokenizer))
 
     # Enable gradient checkpointing for memory efficiency
-    if hasattr(model, "gradient_checkpointing_enable"):
-        model.gradient_checkpointing_enable()
-        print_rank(rank, "Gradient checkpointing enabled")
+    # if hasattr(model, "gradient_checkpointing_enable") and :
+    #    model.gradient_checkpointing_enable()
+    #    print_rank(rank, "Gradient checkpointing enabled")
 
     print_rank(rank, f"Model loaded with {model.num_parameters():,} parameters")
 
@@ -351,11 +331,11 @@ def train_epoch(train_args: TrainArgs, epoch: int):
         nvtx.range_pop()  # batch_N
 
         ts_end = datetime.now()
-        dp_size = world_size // train_args.hpz_partition_size
-        total_tokens = batch["input_ids"].numel() * dp_size
+
+        total_tokens = batch["input_ids"].numel()
         total_loss += loss.item()
         num_batches += 1
-        total_tokens = batch["input_ids"].numel() * dp_size
+        total_tokens = batch["input_ids"].numel()
         epoch_throughput += total_tokens / (ts_end - ts_start).total_seconds()
         batch_throughput = total_tokens / (ts_end - ts_start).total_seconds()
 
@@ -374,9 +354,10 @@ def train_epoch(train_args: TrainArgs, epoch: int):
             current_lr = train_args.optimizer.param_groups[0]["lr"]
             inner_pbar.set_postfix(
                 loss=f"{loss.item():.4f}",
-                lr=f"{current_lr}",
-                batch_throughput=f"{batch_throughput:.2f} tok/s",
-                epoch_throughput=f"{epoch_throughput / num_batches:.2f} tok/s",
+                lr=f"{current_lr:.4e}",
+                throughput_rank0=f"{batch_throughput:.2f} tok/s",
+                avg_throughput_rank0=f"{epoch_throughput / num_batches:.2f} tok/s",
+                overall_throughput=f"{batch_throughput * world_size:.2f} tok/s (world size {world_size})",
             )
     if train_args.accelerator.is_main_process:
         inner_pbar.close()
@@ -495,7 +476,9 @@ def deepspeed_main(args: Namespace):
         )
 
     # Initialize Accelerator with DeepSpeed
-    accelerator = Accelerator()
+    accelerator = Accelerator(
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+    )
 
     print_rank(rank, "Initializing DeepSpeed training...")
     print_rank(rank, f"Rank {rank} / World Size {world_size}")
@@ -544,6 +527,7 @@ def deepspeed_main(args: Namespace):
     # Load model
     print_rank(rank, "Setting up model...")
     model = accelerate_setup_model(
+        accelerator=accelerator,
         model_path=args.model_path,
         tokenizer=dataset.tokenizer,
     )
@@ -576,6 +560,15 @@ def deepspeed_main(args: Namespace):
     print_rank(rank, "Running Accelerator prepare (DeepSpeed initialization)...")
     acc_train_loader, acc_val_loader, acc_model, acc_optimizer, acc_scheduler = (
         accelerator.prepare(train_loader, val_loader, model, optimizer, lr_scheduler)
+    )
+    print_rank(rank, "Dataloaders after Accelerator prepare:")
+    print_rank(
+        rank,
+        f"Train batches: {len(acc_train_loader)} | Rank total samples: {len(acc_train_loader.dataset)}",
+    )
+    print_rank(
+        rank,
+        f"Val batches: {len(acc_val_loader)} | Rank total samples: {len(acc_val_loader.dataset)}",
     )
 
     log_cuda_memory()
@@ -655,4 +648,4 @@ if __name__ == "__main__":
             f"Profiling early stop triggered: {e}",
         )
     except Exception as e:
-        print_rank(rank, f"An error occurred: {e}")
+        raise e
