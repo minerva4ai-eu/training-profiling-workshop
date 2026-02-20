@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+module purge
+module load cuda/12.6 
+
 usage() {
     YELLOW="\033[1;33m"
     CYAN="\033[1;36m"
