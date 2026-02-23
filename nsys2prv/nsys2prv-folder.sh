@@ -99,7 +99,7 @@ if [[ ! -d "$INPUT_DIR" ]]; then
 fi
 
 # Create output directory if needed (before resolving path)
-OUTPUT_DIR="${2:-$INPUT_DIR}"
+OUTPUT_DIR="${OUTPUT_DIR:-$INPUT_DIR}"
 OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
 mkdir -p "$OUTPUT_DIR"
 
@@ -112,7 +112,7 @@ if [[ ${#NSYS_FILES[@]} -eq 0 || ! -e "${NSYS_FILES[0]}" ]]; then
 fi
 
 # Derive output name from folder name if not provided
-OUTPUT_NAME="${3:-$(basename "$INPUT_DIR")}"
+OUTPUT_NAME="${OUTPUT_NAME:-$(basename "$INPUT_DIR")}"
 OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_NAME"
 
 # Trace types to extract
