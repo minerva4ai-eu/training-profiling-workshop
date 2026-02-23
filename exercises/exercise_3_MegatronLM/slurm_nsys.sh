@@ -22,8 +22,7 @@ export TORCHDYNAMO_DISABLE=1
 export TORCH_COMPILE_DISABLE=1
 
 # === Singularity Image Path ===
-#export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.11.01.sif"
-export PATH_SINGULARITY="/leonardo/home/userexternal/apaliour/training-profiling-workshop/singularity-images/nemo_25.07.sif"
+export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.11.01.sif"
 
 # === Host Folder Bind Mount Setup ===
 export PATH_TOKENIZER="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
