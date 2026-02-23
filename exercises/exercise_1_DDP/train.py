@@ -241,7 +241,6 @@ def train_epoch(
     epoch_throughput = 0.0
     total_tokens = 0
 
-    # train_loader.sampler.set_epoch(epoch)
     if accelerator.is_main_process:
         inner_pbar = tqdm.tqdm(
             range(len(train_loader)),
