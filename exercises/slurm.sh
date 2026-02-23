@@ -31,12 +31,13 @@ usage() {
     echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
     echo "  --activation-checkpointing          Enable activation/gradient checkpointing (default: disabled)"
     echo "  --ds-hpz-partition N                Set DeepSpeed HPZ partition size to N, for exercise 2 (DeepSpeed) only. Refers to number of GPUs per model replica (default: 2)"
+    echo "  --ds-bad-comm                       Enable example of bad communication overhead in DeepSpeed, for exercise 2 only (default: disabled)"
     echo "  --ds-stage2                         Use DeepSpeed stage 2 partitioning instead of stage 3, for exercise 2 (DeepSpeed) only (default: stage 3)"
     echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
     echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
     echo "  --global-batch-size N               Set global batch size to N, for exercise 3 (MegatronLM) only (default: 16)"
     echo "  --no-profile                        Disable profiling with NSYS (default: profiling enabled)"
-    echo "  --nsys2prv                          After profiling, automatically translate NSYS output to Paraver traces using nsys2prv (default: disabled)"
+    echo "  --nsys2prv                          After profiling, automatically translate NSYS output to Paraver traces using nsys2prv (default: disabled)"   
     echo ""
     echo "Example:"
     echo "  $0 -n 1 -g 4 -e 1 -a tra26_minwinsc -p boost_usr_prod -- --mixed-precision --gradient-accumulation-steps 4"
@@ -170,6 +171,10 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export HPZ_PARTITION_SIZE="${EXTRA_ARGS[$i]}"
             messages_to_add+="  * DeepSpeed HPZ partition size set to $HPZ_PARTITION_SIZE.\n"
             ;;
+        --ds-bad-comm)
+            export BAD_COMM=1
+            messages_to_add+="  * DeepSpeed example of bad communication overhead enabled!\n"
+            ;;
         --ds-stage2)
             export DS_STAGE2=1
             messages_to_add+="  * DeepSpeed using stage 2 partitioning!\n"
@@ -237,6 +242,26 @@ if [[ -n "$DS_STAGE2" && $EXERCISE -ne 2 ]]; then
     usage
 fi
 
+if [[ -n "$BAD_COMM" && $EXERCISE -ne 2 ]]; then
+    echo "Error: --ds-bad-comm option is only valid for exercise 2 (DeepSpeed)"
+    echo ""
+    usage
+fi
+if [[ $ACTIVATION_CHECKPOINTING -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
+    echo "Error: Activation checkpointing with full precision is not supported in the provided configs.Please enable mixed precision or disable activation checkpointing."
+    echo ""
+    usage
+fi
+if [[ $BAD_COMM -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
+    echo "Error: Bad communication overhead example is only supported with mixed precision in the provided configs. Please enable mixed precision to use this option."
+    echo ""
+    usage
+fi
+if [[ $BAD_COMM -eq 1 && $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
+    echo "Error: Bad communication overhead example is not compatible with activation checkpointing in the provided configs. Please disable activation checkpointing to use this option."
+    echo ""
+    usage
+fi
 # Check if job script exists
 if [[ ! -f "$EXERCISE_DIR/$JOB_SCRIPT" ]]; then
     echo "Error: Job script not found: $EXERCISE_DIR/$JOB_SCRIPT"

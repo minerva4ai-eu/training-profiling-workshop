@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=2_fsdp_deepspeed_nsys
+#SBATCH --job-name=2_deepspeed_nsys
 #SBATCH --output={{LOG_OUT}}
 #SBATCH --error={{LOG_ERR}}
 #SBATCH --nodes={{NUM_NODES}}
@@ -36,9 +36,7 @@
 
 # Load required modules
 module purge
-#module load singularity
-#module load cuda/12.6  # Ensure nsys is available
-module load cuda 
+module load cuda/12.6
 
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
@@ -52,26 +50,42 @@ export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
 export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/accelerate_config.yaml"
-export DS_CONFIG_FILE="$EXERCISE_DIR/ds_config_full-precision.json"
 
 # Dataset and model paths
-DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.json"
+DATASET_PATH="/leonardo_work/tra26_minwinsc/DATA/alpaca-cleaned/alpaca_data_cleaned.json"
 MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
-CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
+CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
 
 # DeepSpeed specific vars
-export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-2} # Number of gpus per model replica
+export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-4} # Number of gpus per model replica
 MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-4}
 GRADIENT_ACCUMULATION_STEPS=${GRADIENT_ACCUMULATION_STEPS:-1}
 MIXED_PRECISION=${MIXED_PRECISION:-0}
 ACTIVATION_CHECKPOINTING=${ACTIVATION_CHECKPOINTING:-0}
 
+NO_PROFILE=${NO_PROFILE:-0} # Boolean flag to disable profiling (for testing without nsys overhead)
+NSYS2PRV=${NSYS2PRV:-0} # Boolean flag to enable nsys2prv translation after profiling
+BAD_COMM=${BAD_COMM:-0} # Boolean flag to enable example of bad communication overhead in DeepSpeed, for testing purposes
+
+DS_CONFIG_FOLDER="ds_configs/stage-3"
+STAGE=3 
+DS_STAGE2=${DS_STAGE2:-0}
+if [[ $DS_STAGE2 -eq 1 ]]; then
+    DS_CONFIG_FOLDER="ds_configs/stage-2"
+    STAGE=2
+fi
+export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_full-precision.json"
 if [[ $MIXED_PRECISION -eq 1 ]]; then 
-    export DS_CONFIG_FILE="$EXERCISE_DIR/ds_config_mixed-precision_no-activation-checkpointing.json" 
+    export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision_no-activation-checkpointing.json" 
     if [[ $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
-        export DS_CONFIG_FILE="$EXERCISE_DIR/ds_config_mixed-precision.json"
+        export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision.json"
+    fi
+    if [[ $BAD_COMM -eq 1 ]]; then
+        export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision_no-activation-checkpointing_comm-overhead.json"
     fi
 fi
+
+
 
 #which python
 echo "NSYS path: $(which nsys)"
@@ -158,7 +172,10 @@ if [[ -n "$HPZ_PARTITION_SIZE" ]]; then
     sed -i "s/\"zero_hpz_partition_size\": \"{{HPZ_PARTITION_SIZE}}\"/\"zero_hpz_partition_size\": $HPZ_PARTITION_SIZE/g" "$tmp_ds_config"
     echo "$ECHO_PREFIX Using hpZ partition size: $HPZ_PARTITION_SIZE"
 fi
-
+if [[ -n "$GRADIENT_ACCUMULATION_STEPS" ]]; then
+    sed -i "s/\"gradient_accumulation_steps\": \"auto\"/\"gradient_accumulation_steps\": $GRADIENT_ACCUMULATION_STEPS/g" "$tmp_ds_config"
+    echo "$ECHO_PREFIX Using gradient accumulation steps: $GRADIENT_ACCUMULATION_STEPS"
+fi
 
 echo "$ECHO_PREFIX =============================================="
 echo "$ECHO_PREFIX DeepSpeed ZeRO-3 NSYS Profiling Configuration"
@@ -194,7 +211,7 @@ train_command="$singularity_prefix accelerate launch \
         --epochs 1 \
         --no-validation \
         --profile \
-        --data-sample 5000 \
+        --data-sample 3000 \
         --dataloader-num-workers 8 \
         --batch-size $MICRO_BATCH_SIZE \
         --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS \
@@ -212,54 +229,71 @@ g4-\
 mbs$MICRO_BATCH_SIZE-\
 gas${GRADIENT_ACCUMULATION_STEPS}-\
 mixed${MIXED_PRECISION}-\
-hpz${HPZ_PARTITION_SIZE}"
+actckpt${ACTIVATION_CHECKPOINTING}-\
+hpz${HPZ_PARTITION_SIZE}-\
+ZeRO${STAGE}"
+if [[ $BAD_COMM -eq 1 ]]; then
+    export PROFILER_PREFIX_PATH="${PROFILER_PREFIX_PATH}-badcomm1"
+fi
 export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
 NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/nsys"
+if [ $NO_PROFILE -eq 1 ]; then
+    echo "$ECHO_PREFIX Profiling is disabled. NSYS output will not be generated."
+    NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/no-nsys"
+fi
 export TRAINING_ARGUMENTS_FILE="$NSYS_OUTPUT_DIR/training_arguments.json"
 mkdir -p "$NSYS_OUTPUT_DIR"
 
 # ============================================================================
 # NSYS Configuration
 # ============================================================================
-# Key options explained:
-#   --trace=cuda,nvtx,osrt,cudnn,cublas : Trace GPU kernels, NVTX markers, OS runtime, cuDNN, cuBLAS
-#   --cuda-memory-usage=true            : Track CUDA memory allocations
-#   --gpuctxsw=true                     : Track GPU context switches
-#   --gpu-metrics-device=all            : Collect GPU metrics (SM utilization, memory throughput, etc.)
+# Recommended NSYS options for ML training profiling:
+#   --trace=cuda,nvtx,osrt,cudnn,ucx,nccl,cublas : Trace GPU kernels, NVTX markers, OS runtime, cuDNN, UCX, NCCL, cuBLAS
+#   --force-overwrite true              : Overwrite existing profile files
+#   --cuda-memory-usage=true            : Track CUDA memory allocations and usage
+#   --gpuctxsw=true                     : Track GPU context switches (optional, rarely a bottleneck)
+#   --gpu-metrics-devices=all           : Collect GPU metrics (SM utilization, memory throughput, etc.)
 #   --gpu-metrics-frequency=10000       : Sample GPU metrics at 10kHz for fine granularity
-#   --capture-range=cudaProfilerApi     : Use cudaProfiler start/stop for precise capture
+#   --capture-range=cudaProfilerApi     : Use cudaProfiler start/stop for precise capture (requires NVTX markers in code)
 #   --capture-range-end=stop            : End capture when cudaProfilerStop is called
 #   --sample=cpu                        : CPU sampling for host-side bottlenecks
 #   --backtrace=dwarf                   : Detailed backtraces for CPU samples
+#   --cudabacktrace=kernel              : Collect backtraces for CUDA kernel launches
 #   --stats=true                        : Generate summary statistics
+#   --export=sqlite                     : Export results in SQLite format for advanced analysis
+#   --output=<path>                     : Set output file path (already used)
+#
 # ============================================================================
 
+# NSYS profiling options
 # Profiler schedule: skip_first + wait + warmup = start of active window
-export PROFILE_SKIP_FIRST=50
+export PROFILE_SKIP_FIRST=30
 export PROFILE_WAIT=1
 export PROFILE_WARMUP=5
 export PROFILE_STEPS_INTERVAL=20
 
 NSYS_OPTS=" \
-    --trace=cpu,cuda,nvtx,osrt,cudnn,cublas \
+    --trace=cuda,nvtx,osrt,cudnn,cublas \
     --cuda-memory-usage=true \
     --gpuctxsw=true \
-    --gpu-metrics-device=all \
+    --gpu-metrics-devices=all \
     --gpu-metrics-frequency=10000 \
     --capture-range=cudaProfilerApi \
     --capture-range-end=stop \
     --cudabacktrace=kernel \
     --stats=true \
-    --force-overwrite=true \
+    --export=sqlite \
     --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID}_rank%q{SLURM_LOCALID} \
 "
 
-train_command="nsys profile $NSYS_OPTS $train_command"
+if [ $NO_PROFILE -eq 0 ]; then
+    train_command="nsys profile $NSYS_OPTS $train_command"
+fi
 
 echo "train_command: $train_command"
 
 echo "$ECHO_PREFIX ============================================================"
-echo "$ECHO_PREFIX Starting NSYS profiling for DeepSpeed ZeRO-3..."
+echo "$ECHO_PREFIX Starting NSYS profiling for DeepSpeed ZeRO-$STAGE..."
 echo "$ECHO_PREFIX Output directory: $NSYS_OUTPUT_DIR"
 echo "$ECHO_PREFIX ============================================================"
 
@@ -279,6 +313,8 @@ srun --export=ALL bash -c "
 
     # Cleanup monitor
     kill -SIGTERM \"\$monitor_pid\"
+
+    # Wait for the monitor to clean up and exit
     wait \"\$monitor_pid\"
 "
 
@@ -291,7 +327,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "$ECHO_PREFIX Training completed successfully."
+echo "$ECHO_PREFIX Training Training."
 echo "$ECHO_PREFIX ============================================================"
 echo "$ECHO_PREFIX NSYS profiling complete!"
 echo "$ECHO_PREFIX Output files: $NSYS_OUTPUT_DIR/"
@@ -301,3 +337,10 @@ echo "$ECHO_PREFIX   1. Download .nsys-rep files to local machine"
 echo "$ECHO_PREFIX   2. Open with: nsys-ui <file>.nsys-rep"
 echo "$ECHO_PREFIX   3. Or generate stats: nsys stats <file>.nsys-rep"
 echo "$ECHO_PREFIX ============================================================"
+
+if [ $NSYS2PRV -eq 1 ]; then
+    experiment_path="$PROFILER_PREFIX_PATH"
+    experiment_name=$(basename "$experiment_path")
+    echo "$ECHO_PREFIX Generating Paraver traces from NSYS profiles with name $experiment_name..."
+    bash "../nsys2prv/nsys2prv-folder.sh" "$NSYS_OUTPUT_DIR" -n "$experiment_name"
+fi
