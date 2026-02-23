@@ -34,11 +34,12 @@ usage() {
     echo "  --ds-stage2                         Use DeepSpeed stage 2 partitioning instead of stage 3, for exercise 2 (DeepSpeed) only (default: stage 3)"
     echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
     echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
+    echo "  --global-batch-size N               Set global batch size to N, for exercise 3 (MegatronLM) only (default: 16)"
     echo "  --no-profile                        Disable profiling with NSYS (default: profiling enabled)"
     echo "  --nsys2prv                          After profiling, automatically translate NSYS output to Paraver traces using nsys2prv (default: disabled)"
     echo ""
     echo "Example:"
-    echo "  $0 -n 1 -g 4 -e 1 -a tra26_minwinsc -q boost_qos_dbg -p boost_usr_prod -- --slow-dataloading --mixed-precision"
+    echo "  $0 -n 1 -g 4 -e 1 -a tra26_minwinsc -p boost_usr_prod -- --mixed-precision --gradient-accumulation-steps 4"
     echo ""
     exit 1
 }
@@ -187,6 +188,11 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export PP="${EXTRA_ARGS[$i]}"
             messages_to_add+="  * Pipeline parallelism set to $PP!\n"
             ;;
+        --global-batch-size)
+            ((i++))
+            export GLOBAL_BATCH_SIZE="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Global batch size set to $GLOBAL_BATCH_SIZE!\n"
+            ;;
         --nsys2prv)
             export NSYS2PRV=1
             messages_to_add+="  * nsys2prv translation enabled!\n"
@@ -246,10 +252,16 @@ if [[ -n $PP ]]; then
         usage
     fi
     if [[ $PP -gt $NUM_NODES ]]; then
-        echo "Error: Invalid value for --pp option. Must be between 1 and the number of nodes ($NUM_NODES)."
+        echo "Error: Invalid value for --pp option. PP($PP) cannot be greater than the number of nodes ($NUM_NODES)."
         echo ""
         usage
     fi
+fi
+
+if [[ -n $GLOBAL_BATCH_SIZE && $EXERCISE -ne 3 ]]; then
+    echo "Error: --global-batch-size option is only valid for exercise 3 (MegatronLM)"
+    echo ""
+    usage
 fi
 
 if [[ -n $TP && $EXERCISE -ne 3 ]]; then
