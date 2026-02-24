@@ -54,7 +54,7 @@ export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/accelerate_config.yaml"
 # Dataset and model paths
 DATASET_PATH="/leonardo_work/tra26_minwinsc/DATA/alpaca-cleaned/alpaca_data_cleaned.json"
 MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
-CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/containers/ai-profiling-workshop.sif"
+CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
 
 # DeepSpeed specific vars
 export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-4} # Number of gpus per model replica
@@ -65,7 +65,7 @@ ACTIVATION_CHECKPOINTING=${ACTIVATION_CHECKPOINTING:-0}
 
 NO_PROFILE=${NO_PROFILE:-0} # Boolean flag to disable profiling (for testing without nsys overhead)
 NSYS2PRV=${NSYS2PRV:-0} # Boolean flag to enable nsys2prv translation after profiling
-BAD_COMM=${BAD_COMM:-0} # Boolean flag to enable example of bad communication overhead in DeepSpeed, for testing purposes
+HEAVY_COMM=${HEAVY_COMM:-0} # Boolean flag to enable example of bad communication overhead in DeepSpeed, for testing purposes
 
 DS_CONFIG_FOLDER="ds_configs/stage-3"
 STAGE=3 
@@ -80,7 +80,7 @@ if [[ $MIXED_PRECISION -eq 1 ]]; then
     if [[ $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
         export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision.json"
     fi
-    if [[ $BAD_COMM -eq 1 ]]; then
+    if [[ $HEAVY_COMM -eq 1 ]]; then
         export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision_no-activation-checkpointing_comm-overhead.json"
     fi
 fi
@@ -193,9 +193,10 @@ echo "$ECHO_PREFIX =============================================="
 # Training Command
 # ============================================================================
 #--bind /dev/infiniband --bind /dev/gdrdrv --bind /etc/infiniband --bind /dev/shm \
-singularity_prefix="singularity exec --nv \
+singularity_prefix="singularity exec --network host --nv \
    	--bind /leonardo \
 	--bind /leonardo_work \
+    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
 	$CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
@@ -211,7 +212,7 @@ train_command="$singularity_prefix accelerate launch \
         --epochs 1 \
         --no-validation \
         --profile \
-        --data-sample 3000 \
+        --data-sample 5000 \
         --dataloader-num-workers 8 \
         --batch-size $MICRO_BATCH_SIZE \
         --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS \
@@ -232,8 +233,8 @@ mixed${MIXED_PRECISION}-\
 actckpt${ACTIVATION_CHECKPOINTING}-\
 hpz${HPZ_PARTITION_SIZE}-\
 ZeRO${STAGE}"
-if [[ $BAD_COMM -eq 1 ]]; then
-    export PROFILER_PREFIX_PATH="${PROFILER_PREFIX_PATH}-badcomm1"
+if [[ $HEAVY_COMM -eq 1 ]]; then
+    export PROFILER_PREFIX_PATH="${PROFILER_PREFIX_PATH}-heavycomm1"
 fi
 export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
 NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/nsys"
@@ -267,7 +268,7 @@ mkdir -p "$NSYS_OUTPUT_DIR"
 
 # NSYS profiling options
 # Profiler schedule: skip_first + wait + warmup = start of active window
-export PROFILE_SKIP_FIRST=30
+export PROFILE_SKIP_FIRST=10
 export PROFILE_WAIT=1
 export PROFILE_WARMUP=5
 export PROFILE_STEPS_INTERVAL=20
@@ -282,8 +283,7 @@ NSYS_OPTS=" \
     --capture-range-end=stop \
     --cudabacktrace=kernel \
     --stats=true \
-    --export=sqlite \
-    --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID}_rank%q{SLURM_LOCALID} \
+    --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID} \
 "
 
 if [ $NO_PROFILE -eq 0 ]; then

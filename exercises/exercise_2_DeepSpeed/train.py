@@ -323,7 +323,6 @@ def train_epoch(train_args: TrainArgs, epoch: int):
             nvtx.range_push("optimizer_step")
             train_args.optimizer.step()
             train_args.scheduler.step()
-            train_args.optimizer.zero_grad()
             log_cuda_memory("After optimizer step |")
 
         nvtx.range_pop()  # optimizer_step
