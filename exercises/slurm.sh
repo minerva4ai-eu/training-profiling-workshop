@@ -31,7 +31,7 @@ usage() {
     echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
     echo "  --activation-checkpointing          Enable activation/gradient checkpointing (default: disabled)"
     echo "  --ds-hpz-partition N                Set DeepSpeed HPZ partition size to N, for exercise 2 (DeepSpeed) only. Refers to number of GPUs per model replica (default: 2)"
-    echo "  --ds-bad-comm                       Enable example of bad communication overhead in DeepSpeed, for exercise 2 only (default: disabled)"
+    echo "  --ds-heavy-comm                     Enable example of heavier communication chuck sizes in DeepSpeed, for exercise 2 only (default: disabled)"
     echo "  --ds-stage2                         Use DeepSpeed stage 2 partitioning instead of stage 3, for exercise 2 (DeepSpeed) only (default: stage 3)"
     echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
     echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
@@ -171,9 +171,9 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export HPZ_PARTITION_SIZE="${EXTRA_ARGS[$i]}"
             messages_to_add+="  * DeepSpeed HPZ partition size set to $HPZ_PARTITION_SIZE.\n"
             ;;
-        --ds-bad-comm)
-            export BAD_COMM=1
-            messages_to_add+="  * DeepSpeed example of bad communication overhead enabled!\n"
+        --ds-heavy-comm)
+            export HEAVY_COMM=1
+            messages_to_add+="  * DeepSpeed example of heavy communication overhead enabled!\n"
             ;;
         --ds-stage2)
             export DS_STAGE2=1
@@ -242,8 +242,8 @@ if [[ -n "$DS_STAGE2" && $EXERCISE -ne 2 ]]; then
     usage
 fi
 
-if [[ -n "$BAD_COMM" && $EXERCISE -ne 2 ]]; then
-    echo "Error: --ds-bad-comm option is only valid for exercise 2 (DeepSpeed)"
+if [[ -n "$HEAVY_COMM" && $EXERCISE -ne 2 ]]; then
+    echo "Error: --ds-heavy-comm option is only valid for exercise 2 (DeepSpeed)"
     echo ""
     usage
 fi
@@ -252,13 +252,13 @@ if [[ $ACTIVATION_CHECKPOINTING -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
     echo ""
     usage
 fi
-if [[ $BAD_COMM -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
-    echo "Error: Bad communication overhead example is only supported with mixed precision in the provided configs. Please enable mixed precision to use this option."
+if [[ $HEAVY_COMM -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
+    echo "Error: Heavy communication overhead example is only supported with mixed precision in the provided configs. Please enable mixed precision to use this option."
     echo ""
     usage
 fi
-if [[ $BAD_COMM -eq 1 && $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
-    echo "Error: Bad communication overhead example is not compatible with activation checkpointing in the provided configs. Please disable activation checkpointing to use this option."
+if [[ $HEAVY_COMM -eq 1 && $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
+    echo "Error: Heavy communication overhead example is not compatible with activation checkpointing in the provided configs. Please disable activation checkpointing to use this option."
     echo ""
     usage
 fi
@@ -346,7 +346,7 @@ echo -e "  ${MAGENTA}Number of Nodes:${RESET} ${BOLD}$NUM_NODES${RESET}"
 echo -e "  ${MAGENTA}GPUs per Node:${RESET} ${BOLD}$NUM_GPUS${RESET}"
 echo -e "  ${MAGENTA}Total GPUs:${RESET} ${BOLD}$((NUM_NODES * NUM_GPUS))${RESET}"
 echo -e "  ${MAGENTA}Account:${RESET} ${BOLD}$ACCOUNT${RESET}"
-echo -e "  ${MAGENTA}Queue/QOS:${RESET} ${BOLD}$QUEUE${RESET}"
+#echo -e "  ${MAGENTA}Queue/QOS:${RESET} ${BOLD}$QUEUE${RESET}"
 echo -e "  ${MAGENTA}Partition:${RESET} ${BOLD}$PARTITION${RESET}"
 echo -e "  ${MAGENTA}Job Script:${RESET} ${BOLD}$tmp_job_script${RESET}"
 echo -e "${BLUE}$messages_to_add${RESET}"
@@ -356,7 +356,7 @@ if [[ $EXERCISE -eq 0 ]]; then
     echo -e "${BOLD}${YELLOW}Running communication tests for intra-node...${RESET}"
     srun --nodes=$NUM_NODES \
         --ntasks-per-node=1 \
-        --cpus-per-task=32 --gres=gpu:0 \
+        --cpus-per-task=32 --gres=gpu:4 \
         --account=$ACCOUNT --partition=$PARTITION \
         "$EXERCISE_DIR/$JOB_SCRIPT"
     echo "Communication tests completed!"
