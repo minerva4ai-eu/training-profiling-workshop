@@ -276,6 +276,33 @@ def train_epoch(
     num_batches = 0
 
     nvtx.range_push(f"epoch_{epoch}-rank_{rank}")
+
+    #############################################################################################
+    # TODO: Exercise 1: Filling the necessary NVTX ranges and CUDA profiler start/stop calls
+    # Example:
+    #   1. CUDA API start and end profiler
+    #       # make sure to import nvtx at the top of the file:
+    #       import torch.cuda.nvtx as nvtx
+    #
+    #       ...
+    #       # Start nsys capture at the beginning of active window
+    #       torch.cuda.cudart().cudaProfilerStart()
+    #       ...
+    #       <code to profile>
+    #       with nvtx.range_push("tag of code area"):
+    #           <code of tagged code area>
+    #       OR
+    #       nvtx.range_push("tag of code area")
+    #       <code of tagged code area>
+    #       nvtx.range_pop()  # for every range_push, there should be a corresponding range_pop
+    #       ...
+    #
+    #       <code to profile>
+    #       # Stop nsys capture at the end of active window
+    #       torch.cuda.cudart().cudaProfilerStop()
+    #       ...
+    ##############################################################################################
+
     train_loader_iter = iter(train_loader)
     for i in range(len(train_loader)):
         if profile and profile_early_stop:
@@ -289,13 +316,8 @@ def train_epoch(
         # Start nsys capture at the beginning of active window
         if profile and i == active_start:
             print_rank(rank, f"[nsys] Starting CUDA profiler capture at batch {i}")
-            torch.cuda.cudart().cudaProfilerStart()
 
-        nvtx.range_push(f"DataLoad batch {i}")
         batch = next(train_loader_iter)
-        nvtx.range_pop()
-
-        nvtx.range_push(f"batch_{i}")
 
         print_rank(rank, f"Batch {i} (size={len(batch['input_ids'])})")
 
@@ -304,17 +326,17 @@ def train_epoch(
         # This handles: loss scaling, gradient sync skipping, optimizer step timing
         with accelerator.accumulate(model):
             log_cuda_memory()
-            with nvtx.range("forward"):
-                output = model(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                    labels=batch["labels"],
-                )
+
+            print_rank(rank, "Forward...")
+            output = model(
+                input_ids=batch["input_ids"],
+                attention_mask=batch["attention_mask"],
+                labels=batch["labels"],
+            )
             loss = output["loss"]
 
             print_rank(rank, "Backward...")
-            with nvtx.range("backward"):
-                accelerator.backward(loss)
+            accelerator.backward(loss)
 
             loss = loss.detach().item()
 
@@ -322,14 +344,12 @@ def train_epoch(
             track_record["lr"][i] = optimizer.param_groups[0]["lr"]
 
             log_cuda_memory()
-            with nvtx.range("optimizer_step"):
-                optimizer.step()
+            print_rank(rank, "Propagating gradients...")
+            optimizer.step()
 
             log_cuda_memory()
-            with nvtx.range("scheduler_step"):
-                lr_scheduler.step()
-
-            log_cuda_memory()
+            print_rank(rank, "Updating scheduler...")
+            lr_scheduler.step()
 
         log_cuda_memory()
 
@@ -337,7 +357,7 @@ def train_epoch(
             rank,
             f"Batch {i} | Loss = {loss} | LR: {lr_scheduler.get_last_lr()[0]}...",
         )
-        nvtx.range_pop()
+
         num_batches += 1
         total_tokens = batch["input_ids"].numel() * dist.get_world_size()
         ts_end = datetime.datetime.now()
@@ -347,7 +367,6 @@ def train_epoch(
         # Stop nsys capture at the end of active window
         if profile and i == (active_end - 1):
             print_rank(rank, f"[nsys] Stopping CUDA profiler capture at batch {i}")
-            torch.cuda.cudart().cudaProfilerStop()
             profile_early_stop = True
 
         if accelerator.is_main_process:
