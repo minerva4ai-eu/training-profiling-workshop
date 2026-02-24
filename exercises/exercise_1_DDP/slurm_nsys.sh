@@ -43,11 +43,11 @@ export TOKENIZERS_PARALLELISM=false
 # Dataset and model paths
 DATASET_PATH="/leonardo_work/tra26_minwinsc/DATA/alpaca-cleaned/alpaca_data_cleaned.json"
 MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Llama-3.1-1B"
-CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/containers/ai-profiling-workshop.sif"
+CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
 
 SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
 MIXED_PRECISION=${MIXED_PRECISION:-0} # Boolean flag to enable mixed precision (e.g., bf16)
-MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-4}
+MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-8}
 GRADIENT_ACCUMULATION_STEPS=${GRADIENT_ACCUMULATION_STEPS:-1}
 
 NO_PROFILE=${NO_PROFILE:-0} # Boolean flag to disable profiling (for testing without nsys overhead)
@@ -110,10 +110,11 @@ num_processes=$((NUM_NODES*NUM_GPUS))
 sed -i "s/main_process_ip: ''/main_process_ip: $head_node_ip/g" "$tmp_config"
 sed -i "s/num_machines: 0/num_machines: $NUM_NODES/g" "$tmp_config"
 sed -i "s/num_processes: 0/num_processes: $num_processes/g" "$tmp_config"
-
+ABSOLUTE_EXERCISE_DIR="$(realpath "$EXERCISE_DIR")"
 singularity_prefix="singularity exec --network host --nv \
 	--bind /leonardo_work \
 	--bind /leonardo \
+    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
 	$CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
@@ -127,7 +128,7 @@ train_command="$singularity_prefix accelerate launch \
         --data-path $DATASET_PATH \
         --model-path $MODEL_PATH \
         --epochs 1 \
-        --data-sample 3000 \
+        --data-sample 5000 \
         --no-validation \
         --profile \
         --batch-size $MICRO_BATCH_SIZE \
@@ -187,7 +188,7 @@ mkdir -p "$NSYS_OUTPUT_DIR"
 
 # NSYS profiling options
 # Profiler schedule: skip_first + wait + warmup = start of active window
-export PROFILE_SKIP_FIRST=30
+export PROFILE_SKIP_FIRST=10
 export PROFILE_WAIT=1
 export PROFILE_WARMUP=5
 export PROFILE_STEPS_INTERVAL=20
@@ -200,10 +201,8 @@ NSYS_OPTS=" \
     --gpu-metrics-frequency=10000 \
     --capture-range=cudaProfilerApi \
     --capture-range-end=stop \
-    --cudabacktrace=kernel \
     --stats=true \
-    --export=sqlite \
-    --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID}_rank%q{SLURM_LOCALID} \
+    --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID} \
 "
 
 if [ $NO_PROFILE -eq 0 ]; then
