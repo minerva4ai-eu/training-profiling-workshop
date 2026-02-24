@@ -22,7 +22,7 @@ export TORCHDYNAMO_DISABLE=1
 export TORCH_COMPILE_DISABLE=1
 
 # === Singularity Image Path ===
-export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.11.01.sif"
+export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.07.sif"
 
 # === Host Folder Bind Mount Setup ===
 export PATH_TOKENIZER="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
@@ -42,10 +42,10 @@ PP="${PP:-1}"
 CP="${CP:-1}"
 #EP="${EP:-2}"
 MBS="${MICRO_BATCH_SIZE:-4}"
-GBS="${GLOBAL_BATCH_SIZE:-16}" # -> 
+GBS="${GLOBAL_BATCH_SIZE:-128}" # -> 
 SEQ_LENGTH="${SEQ_LENGTH:-4096}"
 MAX_POSITION_EMBEDDINGS=$SEQ_LENGTH
-TOTAL_ITERS="${TOTAL_ITERS:-100}" #####################################original 100 iter, set to 10 to speed up 
+TOTAL_ITERS="${TOTAL_ITERS:-10}" #####################################original 100 iter, set to 10 to speed up 
 TOKENIZER_TYPE="${TOKENIZER_TYPE:-HuggingFaceTokenizer}"
 TOKENIZER_MODEL="${TOKENIZER_MODEL:-tokenizer.model}" ##########################################################################tokenizer
 TE_FP8="${TE_FP8:-0}" # 0 for bf16
@@ -60,7 +60,7 @@ CKPT_FORMAT="${CKPT_FORMAT:-torch}"
 
 NO_PROFILE="${NO_PROFILE:-0}" # Boolean flag to disable profiling (for testing without nsys overhead)
 NSYS2PRV="${NSYS2PRV:-0}" # Boolean flag to enable nsys2prv translation after profiling
-export NCCL_DEBUG=INFO
+#export NCCL_DEBUG=INFO
 
 echo "=== Configuration ==="
 echo "MODEL_SIZE: $MODEL_SIZE"
@@ -137,7 +137,7 @@ export GPT_ARGS="\
     --hidden-dropout 0.0 \
     --normalization RMSNorm \
     --micro-batch-size ${MBS} \
-    --global-batch-size ${GLOBAL_BATCH_SIZE} \
+    --global-batch-size ${GBS} \
     --train-iters ${TOTAL_ITERS} \
     --no-async-tensor-model-parallel-allreduce \
     --bf16 \
@@ -234,8 +234,8 @@ export CKPT_LOAD_ARGS=""  # Customize if needed
 
 # Generate profile ranks string: "0 1 2 3 4 5 6 7 ... WORLD_SIZE-1"
 PROFILE_RANKS=$(seq -s ' ' 0 $((WORLD_SIZE - 1)))
-PROFILE_STEPS_OFFSET=50
-PREFILE_STEPS=10
+PROFILE_STEPS_OFFSET=3
+PREFILE_STEPS=5
 PROFILE_START=$((TOTAL_ITERS - PREFILE_STEPS - PROFILE_STEPS_OFFSET))
 export PROFILING_ARGS="\
     --profile \
@@ -259,7 +259,10 @@ train_command="torchrun $DISTRIBUTED_ARGS \
 
 # Wrap with Singularity - use train_command_with_nsys which includes nsys
 singularity_prefix="singularity exec --nv \
-   	--bind /leonardo"
+   	--bind /leonardo \
+    --bind /leonardo_work \
+    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
+"
 gpu_monitor_command="$singularity_prefix \
 	$PATH_SINGULARITY python -m utils.gpus_monitor"
 
@@ -329,9 +332,8 @@ if [ -n "$NSYS_OUTPUT_DIR" ]; then
         --force-overwrite true \
         --capture-range=cudaProfilerApi \
         --capture-range-end=stop \
-        --export=sqlite \
         --stats=true \
-        --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID}_rank%q{SLURM_LOCALID} \
+        --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID} \
         $train_command"
 else
     echo "NSYS_OUTPUT_DIR not set. Profiling disabled."
