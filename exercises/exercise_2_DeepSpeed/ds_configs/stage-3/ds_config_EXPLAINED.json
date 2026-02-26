@@ -1,0 +1,224 @@
+{
+    // ============================================================================
+    // DeepSpeed ZeRO-3 Configuration with Hierarchical Partitioning (hpZ)
+    // ============================================================================
+    // 
+    // This configuration enables ZeRO-3 with hierarchical partitioning (hpZ),
+    // which allows you to control HOW MANY GPUs share the sharded model parameters.
+    //
+    // KEY CONCEPT - Data Parallelism vs Model Sharding:
+    // -------------------------------------------------
+    // With 32 GPUs total and zero_hpz_partition_size=8:
+    //   - Model is sharded across 8 GPUs (each holds 1/8 of parameters)
+    //   - 4 identical model copies exist (32 / 8 = 4 data parallel replicas)
+    //   - Each replica processes different batches → effective batch = 4 * local_batch
+    //
+    // This is equivalent to FSDP HYBRID_SHARD with sharding_factor=8
+    //
+    // FORMULA: num_dp_replicas = world_size / zero_hpz_partition_size
+    // ============================================================================
+
+    "bf16": {
+        // Enable bfloat16 mixed precision training (requires Ampere+ GPUs)
+        // Set to false and enable fp16 if your GPUs don't support bf16
+        "enabled": true
+    },
+
+    "zero_optimization": {
+        // ====================================================================
+        // ZeRO Stage 3: Full parameter, gradient, and optimizer state sharding
+        // ====================================================================
+        // 
+        // Stage 0: No sharding (DDP-like)
+        // Stage 1: Optimizer state sharding only
+        // Stage 2: Optimizer + gradient sharding
+        // Stage 3: Optimizer + gradient + parameter sharding (FSDP-equivalent)
+        "stage": 3,
+
+        // ====================================================================
+        // HIERARCHICAL PARTITIONING (hpZ) - KEY SETTING FOR YOUR REQUIREMENT
+        // ====================================================================
+        // 
+        // This controls the size of the ZeRO sharding group (like FSDP sharding_factor)
+        // 
+        // zero_hpz_partition_size: Number of GPUs that share sharded parameters
+        //   - Set to 8 → shard across 8 GPUs (2 nodes × 4 GPUs each)
+        //   - With 32 total GPUs → 4 data parallel replicas
+        //   - Each replica can process batches independently
+        //
+        // This creates intra-node sharding while maintaining inter-node data parallelism
+        "zero_hpz_partition_size": 8,
+
+        // Use quantized weights during communication to reduce bandwidth
+        // Tradeoff: slight accuracy loss for faster all-reduce
+        "zero_quantized_weights": false,
+        
+        // Use quantized gradients during gradient reduction
+        "zero_quantized_gradients": false,
+
+        // ====================================================================
+        // Stage 3 Specific Settings
+        // ====================================================================
+        
+        // Keep a small portion of parameters in fp32 for numerical stability
+        // Threshold in bytes - params larger than this stay sharded
+        "stage3_param_persistence_threshold": 1e4,
+
+        // Maximum elements to fetch at once during forward/backward
+        // Larger = more memory, smaller = more communication overhead
+        "stage3_max_live_parameters": 1e9,
+
+        // Maximum elements to reduce at once
+        "stage3_max_reuse_distance": 1e9,
+
+        // Use hierarchical partitioning for large clusters
+        "stage3_gather_16bit_weights_on_model_save": true,
+
+        // Prefetch parameters for upcoming layers during forward pass
+        "stage3_prefetch_bucket_size": 5e7,
+
+        // ====================================================================
+        // Offload Settings (Optional - for memory-constrained scenarios)
+        // ====================================================================
+        // 
+        // Uncomment to offload optimizer state and/or parameters to CPU
+        // This significantly increases available GPU memory but slows training
+        //
+        // "offload_optimizer": {
+        //     "device": "cpu",
+        //     "pin_memory": true
+        // },
+        // "offload_param": {
+        //     "device": "cpu",
+        //     "pin_memory": true
+        // },
+
+        // ====================================================================
+        // Communication Optimizations
+        // ====================================================================
+        
+        // Overlap gradient reduction with backward pass for better GPU utilization
+        "overlap_comm": true,
+        
+        // Use contiguous memory for gradients (faster but uses more memory)
+        "contiguous_gradients": true,
+        
+        // Bucket size for gradient reduction (in bytes)
+        // Larger = fewer comms, smaller = better overlap
+        "reduce_bucket_size": 5e8,
+        
+        // Accumulate gradients in fp32 before reduction for numerical stability
+        "reduce_scatter": true,
+        
+        // Enable allgather optimization
+        "allgather_partitions": true,
+        
+        // Bucket size for allgather operations
+        "allgather_bucket_size": 5e8,
+        
+        // Round robin placement of partitions across processes
+        "round_robin_gradients": true
+    },
+
+    // ========================================================================
+    // Optimizer Configuration
+    // ========================================================================
+    // 
+    // DeepSpeed can manage the optimizer directly, or you can use your own.
+    // When using Accelerate, typically leave optimizer management to PyTorch.
+    //
+    // "optimizer": {
+    //     "type": "AdamW",
+    //     "params": {
+    //         "lr": 1e-5,
+    //         "betas": [0.9, 0.999],
+    //         "eps": 1e-8,
+    //         "weight_decay": 0.01
+    //     }
+    // },
+
+    // ========================================================================
+    // Scheduler Configuration (optional - often handled by training code)
+    // ========================================================================
+    // "scheduler": {
+    //     "type": "WarmupDecayLR",
+    //     "params": {
+    //         "warmup_min_lr": 0,
+    //         "warmup_max_lr": 1e-5,
+    //         "warmup_num_steps": 100,
+    //         "total_num_steps": 10000
+    //     }
+    // },
+
+    // ========================================================================
+    // Gradient Handling
+    // ========================================================================
+    
+    // Maximum gradient norm for clipping (0 = disabled)
+    "gradient_clipping": 1.0,
+    
+    // Number of micro-batches to accumulate before weight update
+    // Effective batch = micro_batch * gradient_accumulation * num_dp_replicas
+    "gradient_accumulation_steps": 1,
+
+    // ========================================================================
+    // Training Configuration
+    // ========================================================================
+    
+    // Per-GPU micro-batch size
+    // With 4 DP replicas and batch_size=4: effective_batch = 4 * 4 = 16
+    "train_micro_batch_size_per_gpu": 4,
+    
+    // Alternative: specify total batch size and let DeepSpeed calculate
+    // "train_batch_size": "auto",
+
+    // Maximum sequence length (for memory estimation)
+    // "wall_clock_breakdown": false,
+
+    // ========================================================================
+    // Communication Backend Configuration
+    // ========================================================================
+    // 
+    // DeepSpeed uses NCCL by default. These are typically set via environment
+    // variables but can be specified here for consistency.
+    //
+    // "communication_data_type": "bf16",
+    
+    // ========================================================================
+    // Activation Checkpointing (Gradient Checkpointing)
+    // ========================================================================
+    // 
+    // Trades compute for memory by recomputing activations during backward.
+    // Essential for large models like Mixtral-8x7B.
+    //
+    "activation_checkpointing": {
+        "partition_activations": true,
+        "cpu_checkpointing": false,
+        "contiguous_memory_optimization": true,
+        "number_checkpoints": null,
+        "synchronize_checkpoint_boundary": false,
+        "profile": false
+    },
+
+    // ========================================================================
+    // Logging and Debugging
+    // ========================================================================
+    
+    "steps_per_print": 100,
+    "wall_clock_breakdown": false,
+    
+    // Enable detailed DeepSpeed logging (useful for debugging)
+    // "dump_state": false,
+
+    // ========================================================================
+    // FLOPS Profiler (optional)
+    // ========================================================================
+    // "flops_profiler": {
+    //     "enabled": true,
+    //     "profile_step": 1,
+    //     "module_depth": -1,
+    //     "top_modules": 1,
+    //     "detailed": true,
+    //     "output_file": null
+    // }
+}

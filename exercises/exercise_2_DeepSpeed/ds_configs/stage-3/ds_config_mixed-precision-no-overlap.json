@@ -1,0 +1,29 @@
+{
+    "bf16": {
+        "enabled": true
+    },
+    "zero_optimization": {
+        "stage": 3,
+        "zero_hpz_partition_size": "{{HPZ_PARTITION_SIZE}}",
+        "zero_quantized_weights": false,
+        "zero_quantized_gradients": false,
+        "stage3_param_persistence_threshold": 1e6,
+        "stage3_max_live_parameters": 1e9,
+        "stage3_max_reuse_distance": 1e9,
+        "stage3_gather_16bit_weights_on_model_save": true,
+        "stage3_prefetch_bucket_size": 1e8,
+        "overlap_comm": false,
+        "contiguous_gradients": true,
+        "reduce_bucket_size": 1e8,
+        "reduce_scatter": true,
+        "allgather_partitions": true,
+        "allgather_bucket_size": 1e8,
+        "round_robin_gradients": true
+    },
+    "gradient_clipping": 1.0,
+    
+    "steps_per_print": 100,
+    "wall_clock_breakdown": false,
+    "train_micro_batch_size_per_gpu": "auto",
+    "gradient_accumulation_steps": "auto"
+}
