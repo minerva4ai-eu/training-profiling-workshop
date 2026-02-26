@@ -28,7 +28,7 @@ export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.07
 # === Host Folder Bind Mount Setup ===
 export PATH_TOKENIZER="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
 export PATH_MODEL="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
-export PATH_DATA="/leonardo_work/tra26_minwinsc/DATA"
+export PATH_DATA="/leonardo_work/tra26_minwinsc"
 export PATH_TO_BIN="FW/fineweb-10BT_text_document" # path inside the data folder
 export PATH_RESULTS="$EXERCISE_DIR/results"
 export PATH_LOGS="$EXERCISE_DIR/logs-megatronlm"
