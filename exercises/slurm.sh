@@ -49,7 +49,7 @@ usage() {
 # Default values
 NUM_NODES=1
 NUM_GPUS=4
-QUEUE="boost_qos_dbg"
+QUEUE="qos_prio"
 ACCOUNT="tra26_minwinsc"
 PARTITION="boost_usr_prod"
 EXERCISE=""
@@ -404,7 +404,7 @@ echo -e "  ${MAGENTA}Number of Nodes:${RESET} ${BOLD}$NUM_NODES${RESET}"
 echo -e "  ${MAGENTA}GPUs per Node:${RESET} ${BOLD}$NUM_GPUS${RESET}"
 echo -e "  ${MAGENTA}Total GPUs:${RESET} ${BOLD}$((NUM_NODES * NUM_GPUS))${RESET}"
 echo -e "  ${MAGENTA}Account:${RESET} ${BOLD}$ACCOUNT${RESET}"
-#echo -e "  ${MAGENTA}Queue/QOS:${RESET} ${BOLD}$QUEUE${RESET}"
+echo -e "  ${MAGENTA}Queue/QOS:${RESET} ${BOLD}$QUEUE${RESET}"
 echo -e "  ${MAGENTA}Partition:${RESET} ${BOLD}$PARTITION${RESET}"
 echo -e "  ${MAGENTA}Job Script:${RESET} ${BOLD}$tmp_job_script${RESET}"
 echo -e "${BLUE}$messages_to_add${RESET}"
