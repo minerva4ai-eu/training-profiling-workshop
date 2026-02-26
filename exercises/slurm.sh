@@ -30,9 +30,10 @@ usage() {
     echo "  --micro-batch-size N                Set micro batch size to N (default: 4)"
     echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
     echo "  --activation-checkpointing          Enable activation/gradient checkpointing (default: disabled)"
-    echo "  --ds-hpz-partition N                Set DeepSpeed HPZ partition size to N, for exercise 2 (DeepSpeed) only. Refers to number of GPUs per model replica (default: 2)"
+    echo "  --ds-hpz-partition N                Set DeepSpeed HPZ partition size to N, for exercise 2 (DeepSpeed) only. Refers to num of GPUs per model replica (default: 4)"
     echo "  --ds-heavy-comm                     Enable example of heavier communication chuck sizes in DeepSpeed, for exercise 2 only (default: disabled)"
     echo "  --ds-stage2                         Use DeepSpeed stage 2 partitioning instead of stage 3, for exercise 2 (DeepSpeed) only (default: stage 3)"
+    echo "  --ds-no-overlap                     Disable overlap communication in DeepSpeed, for exercise 2 only (default: disabled)"
     echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
     echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
     echo "  --global-batch-size N               Set global batch size to N, for exercise 3 (MegatronLM) only (default: 16)"
@@ -142,6 +143,13 @@ fi
 
 train_config_message="\nTraining configuration added:\n"
 messages_to_add=""
+
+#DS_NO_OVERLAP=0
+#DS_STAGE2=0
+#HEAVY_COMM=0
+#ACTIVATION_CHECKPOINTING=0
+#MIXED_PRECISION=0
+#SLOW_DATALOADING=0
 while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
     arg="${EXTRA_ARGS[$i]}"
     case "$arg" in
@@ -183,6 +191,10 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export NO_PROFILE=1
             messages_to_add+="  * Profiling disabled!\n"
             ;;
+        --ds-no-overlap)
+            export DS_NO_OVERLAP=1
+            messages_to_add+="  * DeepSpeed overlap communication disabled!\n"
+            ;;
         --tp)
             ((i++))
             export TP="${EXTRA_ARGS[$i]}"
@@ -216,6 +228,47 @@ else
     messages_to_add="$train_config_message$messages_to_add"
 fi
 
+STAGE=3 # default to stage 3 for DeepSpeed, can be overridden with --ds-stage2
+if [[ -n "$DS_STAGE2" ]]; then
+    STAGE=2
+fi
+# Set JOB_SCRIPT based on exercise number
+#case $EXERCISE in
+#    1)  
+#    MODEL_NAME="Llama-3.1-1B"
+#    PROFILE_DIR="$MODEL_NAME-$SLURM_JOB_ID-\
+#n$NUM_NODES-\
+#g4-\
+#mbs$MICRO_BATCH_SIZE-\
+#gas${GRADIENT_ACCUMULATION_STEPS}-\
+#mixed${MIXED_PRECISION}-\
+#slow${SLOW_DATALOADING}/nsys"
+#        ;;
+#    2) 
+#    MODEL_NAME="Mistral-7B-v0.1"
+#    PROFILE_DIR="$MODEL_NAME-$SLURM_JOB_ID-\
+#n$NUM_NODES-\
+#g4-\
+#mbs$MICRO_BATCH_SIZE-\
+#gas${GRADIENT_ACCUMULATION_STEPS}-\
+#mixed${MIXED_PRECISION}-\
+#actckpt${ACTIVATION_CHECKPOINTING}-\
+#commoverlap${DS_NO_OVERLAP}-\
+#hpz${HPZ_PARTITION_SIZE}-\
+#ZeRO${STAGE}/nsys"
+#        ;;
+#    3) 
+#    MODEL_NAME="Mistral-7B-v0.1"
+#    PROFILE_DIR="$MODEL_NAME-$SLURM_JOB_ID-\
+#n$NUM_NODES-\
+#g4-\
+#mbs$MICRO_BATCH_SIZE-\
+#gbs$GLOBAL_BATCH_SIZE-\
+#tp$TP-\
+#pp$PP/nsys"
+#        ;;
+#esac
+
 
 # Slow dataloading is only valid for exercise 1 (DDP)
 if [[ $SLOW_DATALOADING -eq 1 && $EXERCISE -ne 1 ]]; then
@@ -244,6 +297,11 @@ fi
 
 if [[ -n "$HEAVY_COMM" && $EXERCISE -ne 2 ]]; then
     echo "Error: --ds-heavy-comm option is only valid for exercise 2 (DeepSpeed)"
+    echo ""
+    usage
+fi
+if [[ -n "$DS_NO_OVERLAP" && $EXERCISE -ne 2 ]]; then
+    echo "Error: --ds-no-overlap option is only valid for exercise 2 (DeepSpeed)"
     echo ""
     usage
 fi
@@ -368,4 +426,4 @@ echo -e "${BOLD}${GREEN}Submitted job with ID=${RESET}${YELLOW}$JOB_ID${RESET}"
 echo ""
 echo -e "${CYAN}Monitor with:${RESET} ${BOLD}squeue -j $JOB_ID${RESET}"
 echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
-echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXERCISE_DIR/profiler/$JOB_ID-nsys/${RESET}"
+echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXERCISE_DIR/profiler/<model name>-$JOB_ID-<training configuration>${RESET}"

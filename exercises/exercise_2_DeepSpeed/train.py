@@ -41,12 +41,14 @@ class TrainArgs:
     track_memory: bool = False
     enable_checkpoints: bool = False
     checkpoints_dir: str = None
+    activation_checkpointing: bool = False
 
 
 def accelerate_setup_model(
     accelerator: Accelerator,
     model_path: str,
     tokenizer,
+    **kwargs,
 ):
     """
     Load model with DeepSpeed ZeRO-3 initialization context.
@@ -69,10 +71,12 @@ def accelerate_setup_model(
     # Resize embeddings if tokenizer has more tokens
     model.resize_token_embeddings(len(tokenizer))
 
+    activation_checkpointing = kwargs.get("activation_checkpointing", False)
+
     # Enable gradient checkpointing for memory efficiency
-    # if hasattr(model, "gradient_checkpointing_enable") and :
-    #    model.gradient_checkpointing_enable()
-    #    print_rank(rank, "Gradient checkpointing enabled")
+    if activation_checkpointing:
+        model.gradient_checkpointing_enable()
+        print_rank(rank, "Gradient checkpointing enabled!")
 
     print_rank(rank, f"Model loaded with {model.num_parameters():,} parameters")
 
@@ -529,6 +533,7 @@ def deepspeed_main(args: Namespace):
         accelerator=accelerator,
         model_path=args.model_path,
         tokenizer=dataset.tokenizer,
+        activation_checkpointing=args.activation_checkpointing,
     )
 
     # Setup optimizer

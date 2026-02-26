@@ -41,6 +41,7 @@ module load cuda/12.6
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 export NCCL_DEBUG=INFO
+#export LD_PRELOAD=""
 
 export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -52,8 +53,8 @@ export TOKENIZERS_PARALLELISM=false
 export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/accelerate_config.yaml"
 
 # Dataset and model paths
-DATASET_PATH="/leonardo_work/tra26_minwinsc/DATA/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
+DATASET_PATH="/leonardo_work/tra26_minwinsc/datasets/alpaca-cleaned/alpaca_data_cleaned.json"
+MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1/"
 CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
 
 # DeepSpeed specific vars
@@ -66,6 +67,7 @@ ACTIVATION_CHECKPOINTING=${ACTIVATION_CHECKPOINTING:-0}
 NO_PROFILE=${NO_PROFILE:-0} # Boolean flag to disable profiling (for testing without nsys overhead)
 NSYS2PRV=${NSYS2PRV:-0} # Boolean flag to enable nsys2prv translation after profiling
 HEAVY_COMM=${HEAVY_COMM:-0} # Boolean flag to enable example of bad communication overhead in DeepSpeed, for testing purposes
+NO_OVERLAP=${DS_NO_OVERLAP:-0} # Boolean flag to disable overlap communication in DeepSpeed, for testing purposes
 
 DS_CONFIG_FOLDER="ds_configs/stage-3"
 STAGE=3 
@@ -82,6 +84,9 @@ if [[ $MIXED_PRECISION -eq 1 ]]; then
     fi
     if [[ $HEAVY_COMM -eq 1 ]]; then
         export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision_no-activation-checkpointing_comm-overhead.json"
+    fi
+    if [[ $NO_OVERLAP -eq 1 ]]; then
+        export DS_CONFIG_FILE="$EXERCISE_DIR/$DS_CONFIG_FOLDER/ds_config_mixed-precision-no-overlap.json"
     fi
 fi
 
@@ -202,11 +207,7 @@ singularity_prefix="singularity exec --network host --nv \
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 
 python_module="exercise_2_DeepSpeed.train"
-train_command="$singularity_prefix accelerate launch \
-    --config_file $tmp_accelerate_config \
-    --rdzv_backend=c10d \
-    --machine_rank $machine_rank \
-    -m $python_module \
+python_args=" \
         --data-path $DATASET_PATH \
         --model-path $MODEL_PATH \
         --epochs 1 \
@@ -217,7 +218,15 @@ train_command="$singularity_prefix accelerate launch \
         --batch-size $MICRO_BATCH_SIZE \
         --gradient-accumulation-steps $GRADIENT_ACCUMULATION_STEPS \
         --deepspeed-config $DS_CONFIG_FILE"
-
+if [[ $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
+    python_args="${python_args} --activation-checkpointing"
+fi
+train_command="$singularity_prefix accelerate launch \
+    --config_file $tmp_accelerate_config \
+    --rdzv_backend=c10d \
+    --machine_rank $machine_rank \
+    -m $python_module \
+        $python_args"
 
 # ============================================================================
 # NSYS Output Directory
@@ -231,6 +240,7 @@ mbs$MICRO_BATCH_SIZE-\
 gas${GRADIENT_ACCUMULATION_STEPS}-\
 mixed${MIXED_PRECISION}-\
 actckpt${ACTIVATION_CHECKPOINTING}-\
+commoverlap$((1 - NO_OVERLAP))-\
 hpz${HPZ_PARTITION_SIZE}-\
 ZeRO${STAGE}"
 if [[ $HEAVY_COMM -eq 1 ]]; then
