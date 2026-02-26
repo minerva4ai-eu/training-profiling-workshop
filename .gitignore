@@ -10,7 +10,6 @@
 *.out
 *.nsys-rep
 *.sqlite
-*.json
 *.sif
 *.csv
 *.logs
@@ -24,3 +23,5 @@ conda-envs/*
 
 *logs-megatronlm
 *results
+
+*training_arguments.json
