@@ -114,7 +114,6 @@ class AccelerateDeepSpeedArgParser:
             help="Number of GPUs per ZeRO partition group (default: 4). "
             "With 32 GPUs and hpz=4: 8 data parallel replicas, each sharded across 4 GPUs.",
         )
-
         # =========================== #
         # Validation Settings         #
         # =========================== #
@@ -135,6 +134,12 @@ class AccelerateDeepSpeedArgParser:
         # =========================== #
         # Checkpointing               #
         # =========================== #
+        self.parser.add_argument(
+            "--activation-checkpointing",
+            action="store_true",
+            default=False,
+            help="Enable activation checkpointing for memory efficiency",
+        )
 
         # ================================== #
         # Profiling and Debugging            #

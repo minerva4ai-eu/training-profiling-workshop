@@ -20,6 +20,7 @@ export NCCL_P2P_DISABLE=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1 
 export TORCHDYNAMO_DISABLE=1
 export TORCH_COMPILE_DISABLE=1
+#export LD_PRELOAD=""
 
 # === Singularity Image Path ===
 export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.07.sif"
