@@ -29,6 +29,7 @@ export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 # NCCL Configuration for Multi-Node InfiniBand
 # =============================================
 export NCCL_DEBUG=INFO
+export LD_PRELOAD=""
 
 export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -41,8 +42,8 @@ export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
 # Dataset and model paths
-DATASET_PATH="/leonardo_work/tra26_minwinsc/DATA/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Llama-3.1-1B"
+DATASET_PATH="/leonardo_work/tra26_minwinsc/datasets/alpaca-cleaned/alpaca_data_cleaned.json"
+MODEL_PATH="/leonardo_work/tra26_minwinsc/Llama-3.1-1B"
 CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
 
 SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
