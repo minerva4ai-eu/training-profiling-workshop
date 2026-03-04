@@ -49,7 +49,7 @@ usage() {
 # Default values
 NUM_NODES=1
 NUM_GPUS=4
-QUEUE="qos_prio"
+QUEUE=""
 ACCOUNT="tra26_minwinsc"
 PARTITION="boost_usr_prod"
 EXERCISE=""
