@@ -8,6 +8,7 @@ import time
 from typing import TYPE_CHECKING, Literal
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import pandas as pd
 import seaborn as sb
 
@@ -68,6 +69,7 @@ def label_rotate(ax: "Axes", rotation: float, axis: Literal["x", "y"]) -> "Axes"
 
 
 def plot(data, x, y, hue, title, ylabel, png_name):
+
     plt.figure(figsize=(10, 8))
     # Ensure gpu_index is string for legend clarity
     data = data.copy()
@@ -79,7 +81,9 @@ def plot(data, x, y, hue, title, ylabel, png_name):
     plt.xlabel("time")
     plt.ylabel(ylabel)
     plt.legend(title=hue)
-    plt.xticks(rotation=30)
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=30))  # Limit xticks
+    plt.xticks(rotation=30, fontsize=10)
     plt.ticklabel_format(style="plain", axis="y")
     plt.tight_layout()
     plt.savefig(
@@ -132,7 +136,7 @@ def handle_sigterm(signum, frame):
     logger.info("Ploting metrics...")
 
     gpus_metrics["script_timestamp_time"] = gpus_metrics["script_timestamp"].apply(
-        lambda x: x.time()
+        lambda x: x.time().strftime("%H:%M:%S")
     )
     # gpus_metrics["script_timestamp"] = gpus_metrics["script_timestamp"].apply(
     #    lambda x: x - gpus_metrics.loc[0, "script_timestamp"]
@@ -150,7 +154,7 @@ def handle_sigterm(signum, frame):
     # gpus_metrics["ts_hour"] = gpus_metrics.script_timestamp.apply(lambda x: x.time())
     # gpus_metrics = gpus_metrics.sort_values(by="script_timestamp")
 
-    x = "script_timestamp"
+    x = "script_timestamp_time"
     hue = "gpu_index"
 
     # Calculate energy consumption per GPU and get average

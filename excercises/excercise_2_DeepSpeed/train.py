@@ -1,21 +1,3 @@
-"""
-DeepSpeed ZeRO-3 Training Script with Accelerate
-=================================================
-
-This script provides distributed training using DeepSpeed ZeRO-3 with
-hierarchical partitioning (hpZ) for fine-grained control over model sharding.
-
-Key difference from FSDP:
-- ZeRO-3 with hpZ allows specifying exactly how many GPUs share sharded parameters
-- Example: 32 GPUs with hpZ=8 → 4 data parallel replicas, each sharded across 8 GPUs
-
-Usage:
-    accelerate launch --config_file accelerate_config.yaml \\
-        -m accelerate_dist.deepspeed.train_deepspeed \\
-        --model-path /path/to/model \\
-        --data-path /path/to/data.json
-"""
-
 import os
 from argparse import Namespace
 from dataclasses import dataclass
@@ -34,11 +16,8 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 from utils.argparsers.accelerate_deepspeed import AccelerateDeepSpeedArgParser
-from utils.utils import (
-    cleanup_nccl,
-    log_cuda_memory,
-    print_rank,
-)
+from utils.exceptions import ProfilingEarlyStop
+from utils.utils import accelerate2torch_type, cleanup_nccl, log_cuda_memory, print_rank
 
 
 @dataclass
@@ -62,11 +41,14 @@ class TrainArgs:
     track_memory: bool = False
     enable_checkpoints: bool = False
     checkpoints_dir: str = None
+    activation_checkpointing: bool = False
 
 
 def accelerate_setup_model(
+    accelerator: Accelerator,
     model_path: str,
     tokenizer,
+    **kwargs,
 ):
     """
     Load model with DeepSpeed ZeRO-3 initialization context.
@@ -83,15 +65,18 @@ def accelerate_setup_model(
         # attn_implementation="flash_attention_2",
         use_cache=False,  # Disable KV cache for training
         low_cpu_mem_usage=True,
+        torch_dtype=accelerate2torch_type[accelerator.mixed_precision],
     )
 
     # Resize embeddings if tokenizer has more tokens
     model.resize_token_embeddings(len(tokenizer))
 
+    activation_checkpointing = kwargs.get("activation_checkpointing", False)
+
     # Enable gradient checkpointing for memory efficiency
-    if hasattr(model, "gradient_checkpointing_enable"):
+    if activation_checkpointing:
         model.gradient_checkpointing_enable()
-        print_rank(rank, "Gradient checkpointing enabled")
+        print_rank(rank, "Gradient checkpointing enabled!")
 
     print_rank(rank, f"Model loaded with {model.num_parameters():,} parameters")
 
@@ -285,6 +270,8 @@ def train_epoch(train_args: TrainArgs, epoch: int):
     active_start = skip_first + wait + warmup
     active_end = active_start + active
 
+    profile_early_stop = False
+
     if train_args.profile:
         print_rank(0, "Profiler is enabled")
         print_rank(
@@ -295,6 +282,14 @@ def train_epoch(train_args: TrainArgs, epoch: int):
 
     train_loader_iter = iter(train_args.train_loader)
     for batch_idx in range(len(train_args.train_loader)):
+        if train_args.profile and profile_early_stop:
+            print_rank(
+                rank,
+                f"[nsys] Profiler capture complete, exiting training loop at batch {batch_idx}",
+            )
+            dist.barrier()  # Ensure all ranks reach this point before exiting
+            raise ProfilingEarlyStop()  # Signal to exit training loop after profiling window
+
         # Start nsys capture at the beginning of active window
         if train_args.profile and batch_idx == active_start:
             print_rank(
@@ -332,7 +327,6 @@ def train_epoch(train_args: TrainArgs, epoch: int):
             nvtx.range_push("optimizer_step")
             train_args.optimizer.step()
             train_args.scheduler.step()
-            train_args.optimizer.zero_grad()
             log_cuda_memory("After optimizer step |")
 
         nvtx.range_pop()  # optimizer_step
@@ -340,11 +334,11 @@ def train_epoch(train_args: TrainArgs, epoch: int):
         nvtx.range_pop()  # batch_N
 
         ts_end = datetime.now()
-        dp_size = world_size // train_args.hpz_partition_size
-        total_tokens = batch["input_ids"].numel() * dp_size
+
+        total_tokens = batch["input_ids"].numel()
         total_loss += loss.item()
         num_batches += 1
-        total_tokens = batch["input_ids"].numel() * dp_size
+        total_tokens = batch["input_ids"].numel()
         epoch_throughput += total_tokens / (ts_end - ts_start).total_seconds()
         batch_throughput = total_tokens / (ts_end - ts_start).total_seconds()
 
@@ -354,6 +348,7 @@ def train_epoch(train_args: TrainArgs, epoch: int):
                 rank, f"[nsys] Stopping CUDA profiler capture at batch {batch_idx}"
             )
             torch.cuda.cudart().cudaProfilerStop()
+            profile_early_stop = True
 
         # Update tqdm progress bar with current metrics (rank 0 only)
         if train_args.accelerator.is_main_process:
@@ -362,9 +357,10 @@ def train_epoch(train_args: TrainArgs, epoch: int):
             current_lr = train_args.optimizer.param_groups[0]["lr"]
             inner_pbar.set_postfix(
                 loss=f"{loss.item():.4f}",
-                lr=f"{current_lr}",
-                batch_throughput=f"{batch_throughput:.2f} tok/s",
-                epoch_throughput=f"{epoch_throughput / num_batches:.2f} tok/s",
+                lr=f"{current_lr:.4e}",
+                throughput_rank0=f"{batch_throughput:.2f} tok/s",
+                avg_throughput_rank0=f"{epoch_throughput / num_batches:.2f} tok/s",
+                overall_throughput=f"{batch_throughput * world_size:.2f} tok/s (world size {world_size})",
             )
     if train_args.accelerator.is_main_process:
         inner_pbar.close()
@@ -483,7 +479,9 @@ def deepspeed_main(args: Namespace):
         )
 
     # Initialize Accelerator with DeepSpeed
-    accelerator = Accelerator()
+    accelerator = Accelerator(
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+    )
 
     print_rank(rank, "Initializing DeepSpeed training...")
     print_rank(rank, f"Rank {rank} / World Size {world_size}")
@@ -532,8 +530,10 @@ def deepspeed_main(args: Namespace):
     # Load model
     print_rank(rank, "Setting up model...")
     model = accelerate_setup_model(
+        accelerator=accelerator,
         model_path=args.model_path,
         tokenizer=dataset.tokenizer,
+        activation_checkpointing=args.activation_checkpointing,
     )
 
     # Setup optimizer
@@ -564,6 +564,15 @@ def deepspeed_main(args: Namespace):
     print_rank(rank, "Running Accelerator prepare (DeepSpeed initialization)...")
     acc_train_loader, acc_val_loader, acc_model, acc_optimizer, acc_scheduler = (
         accelerator.prepare(train_loader, val_loader, model, optimizer, lr_scheduler)
+    )
+    print_rank(rank, "Dataloaders after Accelerator prepare:")
+    print_rank(
+        rank,
+        f"Train batches: {len(acc_train_loader)} | Rank total samples: {len(acc_train_loader.dataset)}",
+    )
+    print_rank(
+        rank,
+        f"Val batches: {len(acc_val_loader)} | Rank total samples: {len(acc_val_loader.dataset)}",
     )
 
     log_cuda_memory()
@@ -626,18 +635,21 @@ if __name__ == "__main__":
     # Setup profiling directory
     if args.profile and (int(os.environ["RANK"]) == 0):
         print(f"[ RANK {rank} ]: Profiler is enabled")
-        if not os.path.exists(args.profile_logdir):
-            print(f"Creating profile log directory: {args.profile_logdir}")
-            os.makedirs(args.profile_logdir)
-        with open(os.path.join(args.profile_logdir, "train_arguments.json"), "w") as f:
-            import json
+        deepspeed_parser.save_json(
+            os.environ.get("TRAINING_ARGUMENTS_FILE", "deepspeed_train_args.json")
+        )
 
-            json.dump(args.__dict__, f, indent=4)
-
-    os.environ["PROFILE_LOGDIR"] = str(args.profile_logdir)
     if args.enable_checkpoints:
         os.environ["CHECKPOINTS_DIR"] = str(args.checkpoints_dir)
 
     torch.manual_seed(args.seed)
 
-    deepspeed_main(args)
+    try:
+        deepspeed_main(args)
+    except ProfilingEarlyStop as e:
+        print_rank(
+            rank,
+            f"Profiling early stop triggered: {e}",
+        )
+    except Exception as e:
+        raise e

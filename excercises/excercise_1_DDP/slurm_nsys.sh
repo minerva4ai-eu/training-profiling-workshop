@@ -35,31 +35,33 @@ export NCCL_SOCKET_IFNAME=ib0,ib1,ib2,ib3
 export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
 export NCCL_NVLS_ENABLE=0
 export NCCL_IB_DISABLE=0
-export NCCL_DEBUG=INFO
+#export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=INIT
 
 export HF_EVALUATE_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
-#cd "$EXCERCISE_DIR" || { echo "Error: Exercise directory not found: $EXCERCISE_DIR"; exit 1; }
-export ACCELERATE_CONFIG_FILE="$EXCERCISE_DIR/ddp_config.yml"
+#cd "$EXERCISE_DIR" || { echo "Error: Exercise directory not found: $EXERCISE_DIR"; exit 1; }
+export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/ddp_config.yml"
 
 export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
 # Dataset and model paths
-DATASET_PATH="../data/text2text/instructions/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/gpfs/scratch/bsc99/ai_operations/models_registry/models_registry/Llama-3.1-1B"
-CONTAINER_IMAGE="../singularity-images/ai-profiling-workshop.sif"
+DATASET_PATH="<set path to dataset here>" 
+MODEL_PATH="<set path to model here>"
+CONTAINER_IMAGE="<set path to container image here>"
 
 SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
 MIXED_PRECISION=${MIXED_PRECISION:-0} # Boolean flag to enable mixed precision (e.g., bf16)
-MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-4}
+MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-8}
 GRADIENT_ACCUMULATION_STEPS=${GRADIENT_ACCUMULATION_STEPS:-1}
 
-which python
-which nsys
+NO_PROFILE=${NO_PROFILE:-0} # Boolean flag to disable profiling (for testing without nsys overhead)
+NSYS2PRV=${NSYS2PRV:-0} # Boolean flag to enable nsys2prv translation after profiling
+#which python
+echo "NSYS path: $(which nsys)"
 
 # ============================================================================
 # Node Discovery and Rank Assignment
@@ -69,6 +71,13 @@ nodes_array=($nodes)
 head_node=${nodes_array[0]}
 head_node_ip=$(srun --nodes=$NUM_NODES --ntasks=1 -w "$head_node" hostname --ip-address)
 this_node=$(hostname)
+
+for i in "${!nodes_array[@]}"; do
+  nodes_array[$i]="${nodes_array[$i]}.leonardo.local"
+  echo "node $i: ${nodes_array[i]}"
+done
+
+
 machine_rank=-1
 for i in "${!nodes_array[@]}"; do
   if [[ "${nodes_array[i]}" == "$this_node" ]]; then
@@ -109,12 +118,16 @@ num_processes=$((NUM_NODES*NUM_GPUS))
 sed -i "s/main_process_ip: ''/main_process_ip: $head_node_ip/g" "$tmp_config"
 sed -i "s/num_machines: 0/num_machines: $NUM_NODES/g" "$tmp_config"
 sed -i "s/num_processes: 0/num_processes: $num_processes/g" "$tmp_config"
-
-singularity_prefix="singularity exec --network host --nv --bind /apps:/apps $CONTAINER_IMAGE"
+ABSOLUTE_EXERCISE_DIR="$(realpath "$EXERCISE_DIR")"
+singularity_prefix="singularity exec --network host --nv \
+	--bind /leonardo_work \
+	--bind /leonardo \
+    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
+	$CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
 
-python_modulde="excercise_1_DDP.train"
+python_modulde="exercise_1_DDP.train"
 train_command="$singularity_prefix accelerate launch \
     --config_file $tmp_config \
     --rdzv_backend=c10d \
@@ -143,7 +156,7 @@ train_command="$train_command $TRAIN_CLI_ARGS"
 # NSYS Output Directory
 # ============================================================================
 MODEL_NAME=$(basename "$MODEL_PATH")
-export PROFILER_PREFIX_PATH="$EXCERCISE_DIR/profiler/\
+export PROFILER_PREFIX_PATH="$EXERCISE_DIR/profiler/\
 $MODEL_NAME-$SLURM_JOB_ID-\
 n$SLURM_NNODES-\
 g4-\
@@ -153,24 +166,33 @@ mixed${MIXED_PRECISION}-\
 slow${SLOW_DATALOADING}"
 export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
 NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/nsys"
+if [ $NO_PROFILE -eq 1 ]; then
+    echo "$ECHO_PREFIX Profiling is disabled. NSYS output will not be generated."
+    NSYS_OUTPUT_DIR="$PROFILER_PREFIX_PATH/no-nsys"
+fi
 export TRAINING_ARGUMENTS_FILE="$NSYS_OUTPUT_DIR/training_arguments.json"
 mkdir -p "$NSYS_OUTPUT_DIR"
 
-# ============================================================
+# ============================================================================
 # NSYS Configuration
-# ============================================================
-# Key options explained:
-#   --trace=cuda,nvtx,osrt,cudnn,cublas : Trace GPU kernels, NVTX markers, OS runtime, cuDNN, cuBLAS
-#   --cuda-memory-usage=true            : Track CUDA memory allocations
-#   --gpuctxsw=true                     : Track GPU context switches
-#   --gpu-metrics-device=all            : Collect GPU metrics (SM utilization, memory throughput, etc.)
+# ============================================================================
+# Recommended NSYS options for ML training profiling:
+#   --trace=cuda,nvtx,osrt,cudnn,ucx,nccl,cublas : Trace GPU kernels, NVTX markers, OS runtime, cuDNN, UCX, NCCL, cuBLAS
+#   --force-overwrite true              : Overwrite existing profile files
+#   --cuda-memory-usage=true            : Track CUDA memory allocations and usage
+#   --gpuctxsw=true                     : Track GPU context switches (optional, rarely a bottleneck)
+#   --gpu-metrics-devices=all           : Collect GPU metrics (SM utilization, memory throughput, etc.)
 #   --gpu-metrics-frequency=10000       : Sample GPU metrics at 10kHz for fine granularity
-#   --capture-range=cudaProfilerApi     : Use cudaProfiler start/stop for precise capture
+#   --capture-range=cudaProfilerApi     : Use cudaProfiler start/stop for precise capture (requires NVTX markers in code)
 #   --capture-range-end=stop            : End capture when cudaProfilerStop is called
 #   --sample=cpu                        : CPU sampling for host-side bottlenecks
 #   --backtrace=dwarf                   : Detailed backtraces for CPU samples
+#   --cudabacktrace=kernel              : Collect backtraces for CUDA kernel launches
 #   --stats=true                        : Generate summary statistics
-# ============================================================
+#   --export=sqlite                     : Export results in SQLite format for advanced analysis
+#   --output=<path>                     : Set output file path (already used)
+#
+# ============================================================================
 
 # NSYS profiling options
 # Profiler schedule: skip_first + wait + warmup = start of active window
@@ -178,22 +200,24 @@ export PROFILE_SKIP_FIRST=10
 export PROFILE_WAIT=1
 export PROFILE_WARMUP=5
 export PROFILE_STEPS_INTERVAL=20
+
 NSYS_OPTS=" \
     --trace=cuda,nvtx,osrt,cudnn,cublas \
     --cuda-memory-usage=true \
     --gpuctxsw=true \
-    --gpu-metrics-device=all \
+    --gpu-metrics-devices=all \
     --gpu-metrics-frequency=10000 \
     --capture-range=cudaProfilerApi \
     --capture-range-end=stop \
-    --sample=cpu \
-    --backtrace=dwarf \
     --stats=true \
-    --force-overwrite=true \
-    --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID}_rank%q{SLURM_LOCALID} \
+    --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID} \
 "
 
-train_command="nsys profile $NSYS_OPTS $train_command"
+if [ $NO_PROFILE -eq 0 ]; then
+    train_command="nsys profile $NSYS_OPTS $train_command"
+fi
+
+echo "train_command: $train_command"
 
 echo "$ECHO_PREFIX ============================================================"
 echo "$ECHO_PREFIX Starting NSYS profiling for Accelerate DDP..."
@@ -202,28 +226,33 @@ echo "$ECHO_PREFIX ============================================================"
 
 
 srun --export=ALL bash -c "
-    # Start monitoring in background
+    # Start GPU monitoring in background
     $gpu_monitor_command &
     monitor_pid=\$!
 
-    # Optional: give the monitor time to initialize
+    # Allow monitor to initialize
     sleep 5
 
-    # Run training in foreground (this blocks until done)
+    # Run training with nsys profiling (blocks until complete)
     $train_command
 
+    # Cleanup monitor
     kill -SIGTERM \"\$monitor_pid\"
 
     # Wait for the monitor to clean up and exit
     wait \"\$monitor_pid\"
 "
 
+# ============================================================================
+# Cleanup
+# ============================================================================
+
 if [ $? -ne 0 ]; then
-    echo "$ECHO_PREFIX Python script failed. Exiting."
+    echo "$ECHO_PREFIX Training failed. Exiting."
     exit 1
 fi
 
-echo "$ECHO_PREFIX Python script succeeded."
+echo "$ECHO_PREFIX Training Training."
 echo "$ECHO_PREFIX ============================================================"
 echo "$ECHO_PREFIX NSYS profiling complete!"
 echo "$ECHO_PREFIX Output files: $NSYS_OUTPUT_DIR/"
@@ -233,3 +262,10 @@ echo "$ECHO_PREFIX   1. Download .nsys-rep files to local machine"
 echo "$ECHO_PREFIX   2. Open with: nsys-ui <file>.nsys-rep"
 echo "$ECHO_PREFIX   3. Or generate stats: nsys stats <file>.nsys-rep"
 echo "$ECHO_PREFIX ============================================================"
+
+if [ $NSYS2PRV -eq 1 ]; then
+    experiment_path="$PROFILER_PREFIX_PATH"
+    experiment_name=$(basename "$experiment_path")
+    echo "$ECHO_PREFIX Generating Paraver traces from NSYS profiles with name $experiment_name..."
+    bash "../nsys2prv/nsys2prv-folder.sh" "$NSYS_OUTPUT_DIR" -n "$experiment_name"
+fi

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+module purge
+module load cuda/12.6 
+
 usage() {
     YELLOW="\033[1;33m"
     CYAN="\033[1;36m"
@@ -33,7 +36,6 @@ if [[ $# -lt 1 ]]; then
 fi
 
 module purge
-module load singularity
 module load cuda/12.6 # -> nsys version 2024.6.2 compatible with nemo25.02 cuda/nsys version
 
 # Read the first positional argument as the folder path
@@ -74,15 +76,15 @@ SINGULARITYENV_NSYS_HOME=$(which nsys)
 SINGULARITYENV_NSYS_HOME=$(echo "$SINGULARITYENV_NSYS_HOME" | sed 's|bin/nsys||')
 export SINGULARITYENV_NSYS_HOME
 export SINGULARITYENV_APPEND_PATH="$(which nsys)"
-if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
-    echo "Error: This script must be run from the nsys2prv/ directory"
-    echo "Current directory: $PWD"
-    exit 1
-fi
+#if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
+#    echo "Error: This script must be run from the nsys2prv/ directory"
+#    echo "Current directory: $PWD"
+#    exit 1
+#fi
 
-CONTAINER="/gpfs/scratch/bsc99/ai_operations/AI_profiling/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
+CONTAINER="/leonardo/home/userexternal/apaliour/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
 
-SINGU_PREFIX="singularity exec --network host --nv --bind /apps:/apps $CONTAINER"
+SINGU_PREFIX="singularity exec --nv -B /leonardo $CONTAINER"
 
 $SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
 
@@ -97,7 +99,7 @@ if [[ ! -d "$INPUT_DIR" ]]; then
 fi
 
 # Create output directory if needed (before resolving path)
-OUTPUT_DIR="${2:-$INPUT_DIR}"
+OUTPUT_DIR="${OUTPUT_DIR:-$INPUT_DIR}"
 OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
 mkdir -p "$OUTPUT_DIR"
 
@@ -110,7 +112,7 @@ if [[ ${#NSYS_FILES[@]} -eq 0 || ! -e "${NSYS_FILES[0]}" ]]; then
 fi
 
 # Derive output name from folder name if not provided
-OUTPUT_NAME="${3:-$(basename "$INPUT_DIR")}"
+OUTPUT_NAME="${OUTPUT_NAME:-$(basename "$INPUT_DIR")}"
 OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_NAME"
 
 # Trace types to extract

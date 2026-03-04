@@ -1,6 +1,5 @@
 # Libraries used in the distributed training
 import datetime
-import json
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Tuple
@@ -17,6 +16,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LRScheduler
 from transformers.optimization import get_linear_schedule_with_warmup
 from utils.argparsers.accelerate_ddp import AccelerateDDPArguments
+from utils.exceptions import ProfilingEarlyStop
 from utils.utils import (
     accelerate_setup_model,
     cleanup_nccl,
@@ -241,7 +241,6 @@ def train_epoch(
     epoch_throughput = 0.0
     total_tokens = 0
 
-    # train_loader.sampler.set_epoch(epoch)
     if accelerator.is_main_process:
         inner_pbar = tqdm.tqdm(
             range(len(train_loader)),
@@ -258,6 +257,7 @@ def train_epoch(
     # Calculate when active window starts and ends
     active_start = skip_first + wait + warmup
     active_end = active_start + active
+    profile_early_stop = False  # Whether to stop training after profiling window
 
     if profile:
         print_rank(0, "Profiler is enabled")
@@ -278,6 +278,14 @@ def train_epoch(
     nvtx.range_push(f"epoch_{epoch}-rank_{rank}")
     train_loader_iter = iter(train_loader)
     for i in range(len(train_loader)):
+        if profile and profile_early_stop:
+            print_rank(
+                rank,
+                f"[nsys] Profiler capture complete, exiting training loop at batch {i}",
+            )
+            dist.barrier()  # Ensure all ranks reach this point before exiting
+            raise ProfilingEarlyStop()  # Signal to exit training loop after profiling window
+
         # Start nsys capture at the beginning of active window
         if profile and i == active_start:
             print_rank(rank, f"[nsys] Starting CUDA profiler capture at batch {i}")
@@ -296,12 +304,19 @@ def train_epoch(
         # This handles: loss scaling, gradient sync skipping, optimizer step timing
         with accelerator.accumulate(model):
             log_cuda_memory()
-            loss = __train_inner_loop(
-                accelerator=accelerator,
-                batch=batch,
-                model=model,
-                rank=rank,
-            )
+            with nvtx.range("forward"):
+                output = model(
+                    input_ids=batch["input_ids"],
+                    attention_mask=batch["attention_mask"],
+                    labels=batch["labels"],
+                )
+            loss = output["loss"]
+
+            print_rank(rank, "Backward...")
+            with nvtx.range("backward"):
+                accelerator.backward(loss)
+
+            loss = loss.detach().item()
 
             track_record["loss"][i] = loss
             track_record["lr"][i] = optimizer.param_groups[0]["lr"]
@@ -315,8 +330,6 @@ def train_epoch(
                 lr_scheduler.step()
 
             log_cuda_memory()
-            with nvtx.range("zero_grad"):
-                optimizer.zero_grad()
 
         log_cuda_memory()
 
@@ -335,6 +348,7 @@ def train_epoch(
         if profile and i == (active_end - 1):
             print_rank(rank, f"[nsys] Stopping CUDA profiler capture at batch {i}")
             torch.cuda.cudart().cudaProfilerStop()
+            profile_early_stop = True
 
         if accelerator.is_main_process:
             inner_pbar.update(1)
@@ -638,13 +652,7 @@ if __name__ == "__main__":
     print(f"[ RANK {rank} ]: args.profile : {args.profile}")
     if args.profile and (rank == 0):
         print(f"[ RANK {rank} ]: " + "Profiler is enabled")
-        if not os.path.exists(args.profile_logdir):
-            print(f"Creating profile log directory: {args.profile_logdir}")
-            os.makedirs(args.profile_logdir)
-        with open(os.path.join(args.profile_logdir, "train_arguments.json"), "w") as f:
-            import json
-
-            json.dump(args.__dict__, f, indent=4)
+        ddp_parser.save_json(os.environ.get("TRAINING_ARGUMENTS_FILE", "ddp_args.json"))
 
     os.environ["PROFILE_LOGDIR"] = str(args.profile_logdir)
 
@@ -654,4 +662,12 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
 
     # print(args)
-    ddp_main(args)
+    try:
+        ddp_main(args)
+    except ProfilingEarlyStop as e:
+        print_rank(
+            rank,
+            f"Profiling early stop triggered: {e}",
+        )
+    except Exception as e:
+        raise e
