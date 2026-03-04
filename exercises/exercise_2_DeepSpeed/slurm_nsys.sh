@@ -53,9 +53,9 @@ export TOKENIZERS_PARALLELISM=false
 export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/accelerate_config.yaml"
 
 # Dataset and model paths
-DATASET_PATH="/leonardo_work/tra26_minwinsc/datasets/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1/"
-CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
+DATASET_PATH="<set path to dataset here>"
+MODEL_PATH="<set path to model here>"
+CONTAINER_IMAGE="<set path to container image here>"
 
 # DeepSpeed specific vars
 export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-4} # Number of gpus per model replica

@@ -23,13 +23,13 @@ export TORCH_COMPILE_DISABLE=1
 #export LD_PRELOAD=""
 
 # === Singularity Image Path ===
-export PATH_SINGULARITY="/leonardo_work/tra26_minwinsc/bsc-containers/nemo_25.07.sif"
+export PATH_SINGULARITY="<set path to container image here>"
 
 # === Host Folder Bind Mount Setup ===
-export PATH_TOKENIZER="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
-export PATH_MODEL="/leonardo_work/tra26_minwinsc/models/Mistral-7B-v0.1"
-export PATH_DATA="/leonardo_work/tra26_minwinsc"
-export PATH_TO_BIN="FW/fineweb-10BT_text_document" # path inside the data folder
+export PATH_TOKENIZER="<set path to tokenizer here>"
+export PATH_MODEL="<set path to model here>"
+export PATH_DATA="<set path to data here>"
+export PATH_TO_BIN="<set path to binary here>" # path inside the data folder containing .bin & .idx
 export PATH_RESULTS="$EXERCISE_DIR/results"
 export PATH_LOGS="$EXERCISE_DIR/logs-megatronlm"
 export PATH_CACHE="$EXERCISE_DIR/.cache-megatronlm"

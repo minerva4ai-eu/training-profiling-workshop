@@ -104,6 +104,15 @@ Test intra-node GPU discovery and GPU communication (intra-node and inter-node) 
 **Goal:**
 Train a language model using PyTorch DDP via HuggingFace Accelerate. Focus on profiling and analyzing distributed training, memory usage, and communication overhead. Options for mixed precision, slow dataloading, and gradient accumulation.
 
+**Prepare**
+- Make sure to set the following environment variables in exercise_2_DeepSpeed/slurm_nsys.sh
+```
+# Dataset and model paths
+DATASET_PATH="<set path to dataset here>" 
+MODEL_PATH="<set path to model here>"
+CONTAINER_IMAGE="<set path to container image here>"
+```
+
 **How to run:**
 - Use `slurm.sh -e 1` with extra arguments as needed.
 
@@ -111,12 +120,34 @@ Train a language model using PyTorch DDP via HuggingFace Accelerate. Focus on pr
 **Goal:**
 Train a language model using DeepSpeed ZeRO-2 or ZeRO-3 with hierarchical partitioning (hpZ). Explore advanced memory optimization, model sharding, and scaling. Configurable via DeepSpeed config files and extra arguments for partitioning, mixed precision, and more.
 
+**Prepare**
+- Make sure to set the following environment variables in exercise_2_DeepSpeed/slurm_nsys.sh
+```
+# Dataset and model paths
+DATASET_PATH="<set path to dataset here>" 
+MODEL_PATH="<set path to model here>"
+CONTAINER_IMAGE="<set path to container image here>"
+```
+
 **How to run:**
 - Use `slurm.sh -e 2` with DeepSpeed-specific arguments (see above).
 
 ## Exercise 3: MegatronLM
 **Goal:**
 Train a large language model using Megatron-LM, exploring tensor and pipeline parallelism, and advanced distributed strategies. Profiling and monitoring are integrated. Highly configurable for research on large-scale model training.
+
+**Prepare**
+- Make sure to set the following environment variables in exercise_2_DeepSpeed/slurm_nsys.sh
+```
+# === Singularity Image Path ===
+export PATH_SINGULARITY="<set path to container image here>"
+
+# === Host Folder Bind Mount Setup ===
+export PATH_TOKENIZER="<set path to tokenizer here>"
+export PATH_MODEL="<set path to model here>"
+export PATH_DATA="<set path to data here>"
+export PATH_TO_BIN="<set path to binary here>" # path inside the data folder containing .bin & .idx
+```
 
 **How to run:**
 - Use `slurm.sh -e 3` with Megatron-specific arguments (see above).

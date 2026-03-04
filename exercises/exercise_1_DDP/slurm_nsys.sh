@@ -42,9 +42,9 @@ export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
 # Dataset and model paths
-DATASET_PATH="/leonardo_work/tra26_minwinsc/datasets/alpaca-cleaned/alpaca_data_cleaned.json"
-MODEL_PATH="/leonardo_work/tra26_minwinsc/Llama-3.1-1B"
-CONTAINER_IMAGE="/leonardo_work/tra26_minwinsc/bsc-containers/ai-profiling-workshop.sif"
+DATASET_PATH="<set path to dataset here>" 
+MODEL_PATH="<set path to model here>"
+CONTAINER_IMAGE="<set path to container image here>"
 
 SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
 MIXED_PRECISION=${MIXED_PRECISION:-0} # Boolean flag to enable mixed precision (e.g., bf16)
