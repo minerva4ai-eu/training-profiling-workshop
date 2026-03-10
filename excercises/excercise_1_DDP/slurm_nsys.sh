@@ -120,8 +120,6 @@ sed -i "s/num_machines: 0/num_machines: $NUM_NODES/g" "$tmp_config"
 sed -i "s/num_processes: 0/num_processes: $num_processes/g" "$tmp_config"
 ABSOLUTE_EXERCISE_DIR="$(realpath "$EXERCISE_DIR")"
 singularity_prefix="singularity exec --network host --nv \
-	--bind /leonardo_work \
-	--bind /leonardo \
     --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
 	$CONTAINER_IMAGE"
 

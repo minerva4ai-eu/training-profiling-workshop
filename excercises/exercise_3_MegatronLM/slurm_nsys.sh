@@ -270,8 +270,6 @@ train_command="torchrun $DISTRIBUTED_ARGS \
 
 # Wrap with Singularity - use train_command_with_nsys which includes nsys
 singularity_prefix="singularity exec --nv \
-   	--bind /leonardo \
-    --bind /leonardo_work \
     --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
 "
 gpu_monitor_command="$singularity_prefix \

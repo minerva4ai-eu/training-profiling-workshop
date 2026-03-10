@@ -208,8 +208,6 @@ echo "$ECHO_PREFIX =============================================="
 # ============================================================================
 #--bind /dev/infiniband --bind /dev/gdrdrv --bind /etc/infiniband --bind /dev/shm \
 singularity_prefix="singularity exec --network host --nv \
-   	--bind /leonardo \
-	--bind /leonardo_work \
     --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
 	$CONTAINER_IMAGE"
 
