@@ -73,7 +73,7 @@ head_node_ip=$(srun --nodes=$NUM_NODES --ntasks=1 -w "$head_node" hostname --ip-
 this_node=$(hostname)
 
 for i in "${!nodes_array[@]}"; do
-  nodes_array[$i]="${nodes_array[$i]}.leonardo.local"
+  nodes_array[$i]="${nodes_array[$i]}"
   echo "node $i: ${nodes_array[i]}"
 done
 
