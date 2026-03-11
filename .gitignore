@@ -9,7 +9,6 @@
 *.out
 *.nsys-rep
 *.sqlite
-*.json
 *.sif
 *.csv
 *.logs
@@ -18,4 +17,5 @@
 *.pcf
 *.row
 
+data/
 conda-envs/*
