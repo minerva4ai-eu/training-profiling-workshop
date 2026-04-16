@@ -9,10 +9,11 @@
 #SBATCH --time=00:30:00
 #SBATCH --exclusive
 #SBATCH --account={{ACCOUNT}}
-##SBATCH --qos={{QUEUE}}
+#SBATCH --qos={{QUEUE}}
 #SBATCH --partition={{PARTITION}}
 
 module purge
+module load singularity
 module load cuda/12.6
 
 export NUMEXPR_MAX_THREADS=256
