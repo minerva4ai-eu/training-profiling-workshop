@@ -1,4 +1,9 @@
 #!/bin/bash
+
+export QUEUE="< QUEUE_NAME >"
+export ACCOUNT="< ACCOUNT_NAME >"
+export PARTITION="< PARTITION_NAME >"
+
 export EX1_DATASET_PATH="<fill in path to alpaca_data_cleaned.json for Alpcaca instruction tuning example>"
 export EX1_CONTAINER_IMAGE="< path to singularity .sif built using singularity-images/def/ai-profiling-workshop.def >"
 

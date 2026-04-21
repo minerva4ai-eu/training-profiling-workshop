@@ -57,23 +57,26 @@ usage() {
     echo "  --ds-no-overlap                     Disable overlap communication in DeepSpeed, for exercise 2 only (default: disabled)"
     echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
     echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
+    echo "  --ep N                              Set expert parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no expert parallelism)"
     echo "  --global-batch-size N               Set global batch size to N, for exercise 3 (MegatronLM) only (default: 16)"
     echo "  --no-profile                        Disable profiling with NSYS (default: profiling enabled)"
     echo "  --nsys2prv                          After profiling, automatically translate NSYS output to Paraver traces using nsys2prv (default: disabled)"   
     echo "  --models_list                       List available models for profiling for given exercise."
     echo ""
     echo "Example:"
-    echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc -- --slow-dataloading --mixed-precision"
+    echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc -- --model Llama_32_3B --mixed-precision bf16 --micro-batch-size 4 --gradient-accumulation-steps 4"
     echo ""
     exit 1
 }
 
+source env.sh
+
 # Default values
 NUM_NODES=1
 NUM_GPUS=4
-QUEUE="acc_bench"
-ACCOUNT="bsc99"
-PARTITION="acc"
+QUEUE="$QUEUE"
+ACCOUNT="$ACCOUNT"
+PARTITION="$PARTITION"
 EXERCISE=""
 
 
