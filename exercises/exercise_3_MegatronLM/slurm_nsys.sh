@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:{{NUM_GPUS}}
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=80
-#SBATCH --time=00:30:00
+#SBATCH --time=01:00:00
 #SBATCH --exclusive
 #SBATCH --account={{ACCOUNT}}
 #SBATCH --qos={{QUEUE}}
@@ -33,7 +33,7 @@ export NCCL_IB_HCA=mlx5_0,mlx5_1,mlx5_4,mlx5_5
 export NCCL_NVLS_ENABLE=0
 export NCCL_IB_DISABLE=0
 #export NCCL_DEBUG=INFO
-export NCCL_DEBUG_SUBSYS=INIT
+# export NCCL_DEBUG_SUBSYS=INIT
 
 # === Singularity Image Path ===
 export PATH_SINGULARITY="$EX3_CONTAINER_IMAGE"
