@@ -82,12 +82,6 @@ export SINGULARITYENV_APPEND_PATH="$(which nsys)"
 
 CONTAINER=${NSYS2PRV_CONTAINER_IMAGE:-"../singularity-images/ai-profiling-workshop-nsys2prv.sif"}
 
-SINGU_PREFIX="singularity exec --bind /apps:/apps --nv $CONTAINER"
-
-$SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
-
-
-
 INPUT_DIR="$(realpath "$INPUT_DIR")"
 
 # Validate input directory
@@ -100,6 +94,15 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-$INPUT_DIR}"
 OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
 mkdir -p "$OUTPUT_DIR"
+
+SINGU_PREFIX="singularity exec --nv \
+--bind /apps:/apps \
+--bind $INPUT_DIR:$INPUT_DIR \
+--bind $OUTPUT_DIR:$OUTPUT_DIR \
+$CONTAINER"
+
+$SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
+
 
 # Find all .nsys-rep files
 NSYS_FILES=( "$INPUT_DIR"/*.nsys-rep )
