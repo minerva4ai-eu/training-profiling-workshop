@@ -39,6 +39,8 @@ module purge
 module load singularity
 module load cuda/12.6  # Ensure nsys is available
 
+source "${EXERCISE_DIR}/../env.sh"
+
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 # =============================================
@@ -62,9 +64,9 @@ export TOKENIZERS_PARALLELISM=false
 export ACCELERATE_CONFIG_FILE="$EXERCISE_DIR/accelerate_config.yaml"
 
 # Dataset and model paths
-DATASET_PATH="<set path to dataset here>"
-MODEL_PATH="<set path to model here>"
-CONTAINER_IMAGE="<set path to container image here>"
+DATASET_PATH="$EX2_DATASET_PATH"
+CONTAINER_IMAGE="$EX2_CONTAINER_IMAGE"
+MODEL_PATH="$PATH_MODEL"
 
 # DeepSpeed specific vars
 export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-4} # Number of gpus per model replica
@@ -207,8 +209,8 @@ echo "$ECHO_PREFIX =============================================="
 # Training Command
 # ============================================================================
 #--bind /dev/infiniband --bind /dev/gdrdrv --bind /etc/infiniband --bind /dev/shm \
-singularity_prefix="singularity exec --network host --nv \
-    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
+#   --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
+singularity_prefix="singularity exec --bind /apps:/apps --nv \
 	$CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
@@ -240,7 +242,7 @@ train_command="$singularity_prefix accelerate launch \
 # ============================================================================
 MODEL_NAME=$(basename "$MODEL_PATH")
 export PROFILER_PREFIX_PATH="$EXERCISE_DIR/profiler/\
-$MODEL_NAME-$SLURM_JOB_ID-\
+$MODEL_NAME/$SLURM_JOB_ID-\
 n$SLURM_NNODES-\
 g4-\
 mbs$MICRO_BATCH_SIZE-\

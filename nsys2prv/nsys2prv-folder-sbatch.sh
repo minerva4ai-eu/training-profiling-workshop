@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=nsys2prv_folder
-#SBATCH --output=/leonardo/home/userexternal/apaliour/training-profiling-workshop/nsys2prv/slurm-logs/%j/log.out
-#SBATCH --error=/leonardo/home/userexternal/apaliour/training-profiling-workshop/nsys2prv/slurm-logs/%j/log.err
+#SBATCH --output=slurm-logs/%j/log.out
+#SBATCH --error=slurm-logs/%j/log.err
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:4
 #SBATCH --tasks-per-node=1
@@ -14,7 +14,7 @@
 module purge
 module load cuda/12.6
 
-CONTAINER="/leonardo/home/userexternal/apaliour/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
+CONTAINER="$NSYS2PRV_CONTAINER_IMAGE"
 
 set -euo pipefail
 

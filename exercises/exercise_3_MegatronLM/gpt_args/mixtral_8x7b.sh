@@ -1,0 +1,16 @@
+#!/bin/bash
+
+export HIDDEN_SIZE=4096
+export FFN_HIDDEN_SIZE=14336
+export NUM_LAYERS=32
+export NUM_HEADS=32
+export NUM_KV_HEADS=8
+export MAX_POSITION_EMBEDDINGS=32768
+export SEQ_LENGTH=32768
+export INIT_METHOD_STD=0.005
+export ROTARY_BASE=1000000
+export MOE=1 # Enable MoE arguments
+export NUM_EXPERTS=8
+export MOE_ROUTER_TOPK=2
+export MOE_ROUTER_LOAD_BALANCING_TYPE=aux_loss
+export MOE_AUX_LOSS_COEFF=0.001

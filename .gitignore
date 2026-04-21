@@ -19,3 +19,9 @@
 
 data/
 conda-envs/*
+
+*profiler/
+
+exercises/exercise_3_MegatronLM/.cache-megatronlm/*
+exercises/exercise_3_MegatronLM/logs-megatronlm/*
+exercises/exercise_3_MegatronLM/results/

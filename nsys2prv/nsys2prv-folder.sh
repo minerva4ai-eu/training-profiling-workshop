@@ -2,7 +2,8 @@
 set -euo pipefail
 
 module purge
-module load cuda/12.6 
+module load cuda/12.6 # -> nsys version 2024.6.2 compatible with nemo25.02 cuda/nsys version
+module load singularity
 
 usage() {
     YELLOW="\033[1;33m"
@@ -34,9 +35,6 @@ if [[ $# -lt 1 ]]; then
     echo "Error: <folder-path> argument is required."
     usage
 fi
-
-module purge
-module load cuda/12.6 # -> nsys version 2024.6.2 compatible with nemo25.02 cuda/nsys version
 
 # Read the first positional argument as the folder path
 INPUT_DIR="$1"
@@ -82,9 +80,9 @@ export SINGULARITYENV_APPEND_PATH="$(which nsys)"
 #    exit 1
 #fi
 
-CONTAINER="/leonardo/home/userexternal/apaliour/training-profiling-workshop/singularity-images/ai-profiling-workshop-nsys2prv.sif"
+CONTAINER=${NSYS2PRV_CONTAINER_IMAGE:-"../singularity-images/ai-profiling-workshop-nsys2prv.sif"}
 
-SINGU_PREFIX="singularity exec --nv -B /leonardo $CONTAINER"
+SINGU_PREFIX="singularity exec --bind /apps:/apps --nv $CONTAINER"
 
 $SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
 

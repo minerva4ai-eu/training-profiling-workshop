@@ -1,0 +1,8 @@
+#!/bin/bash
+
+export HIDDEN_SIZE=4096
+export FFN_HIDDEN_SIZE=14336
+export NUM_LAYERS=32
+export NUM_HEADS=32
+export NUM_KV_HEADS=8
+export MAX_POSITION_EMBEDDINGS=4096

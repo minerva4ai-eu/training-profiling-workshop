@@ -1,0 +1,13 @@
+#!/bin/bash
+
+export HIDDEN_SIZE=8192
+export FFN_HIDDEN_SIZE=28672
+export NUM_LAYERS=80
+export NUM_HEADS=64
+export NUM_KV_HEADS=8
+export MAX_POSITION_EMBEDDINGS=4096
+export INIT_METHOD_STD=0.001
+export ROTARY_BASE=1000000
+
+export LR=1e-4
+export MIN_LR=1e-5

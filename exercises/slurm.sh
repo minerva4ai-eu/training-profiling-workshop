@@ -4,12 +4,32 @@
 # SLURM Job Submission Wrapper Script
 # ============================================================
 
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+MAGENTA='\033[1;35m'
+CYAN='\033[1;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
 # Ensure script is run from exercises/ directory
 if [[ ! "$(basename "$PWD")" == "exercises" ]]; then
-    echo "Error: This script must be run from the 'exercises/' directory"
-    echo "Current directory: $PWD"
+    echo "---------------------------------------------------------"
+    echo -e "${BOLD}${RED}Error:${RESET} ${RED}This script must be run from the 'exercises/' directory${RESET}"
+    echo -e "${BOLD}${YELLOW}Current directory:${RESET} $PWD"
+    echo "---------------------------------------------------------"
     exit 1
 fi
+
+error_usage() {
+    echo "---------------------------------------------------------"
+    echo -e "${BOLD}${RED}Error:${RESET} $1"
+    echo ""
+    echo -e "> Run ${YELLOW}'bash $0 --help'${RESET} for usage instructions."
+    echo "---------------------------------------------------------"
+    exit 1
+}
 
 usage() {
     echo "Usage: $0 [OPTIONS] [-- EXTRA_ARGS]"
@@ -25,8 +45,9 @@ usage() {
     echo ""
     echo "Extra arguments after '--' will be passed to the training script."
     echo ""
+    echo "  --model NAME                        Set model name to profile  "
     echo "  --slow-dataloading                  Enable slow dataloading example for exercise 1 (DDP) (default: disabled)"
-    echo "  --mixed-precision                   Enable mixed precision training using 'bf16' (default: disabled)"
+    echo "  --mixed-precision TYPE              Enable mixed precision training using 'bf16', 'fp16' or 'fp8' (default: disabled)"
     echo "  --micro-batch-size N                Set micro batch size to N (default: 4)"
     echo "  --gradient-accumulation-steps N     Set gradient accumulation steps to N (default: 1)"
     echo "  --activation-checkpointing          Enable activation/gradient checkpointing (default: disabled)"
@@ -39,6 +60,7 @@ usage() {
     echo "  --global-batch-size N               Set global batch size to N, for exercise 3 (MegatronLM) only (default: 16)"
     echo "  --no-profile                        Disable profiling with NSYS (default: profiling enabled)"
     echo "  --nsys2prv                          After profiling, automatically translate NSYS output to Paraver traces using nsys2prv (default: disabled)"   
+    echo "  --models_list                       List available models for profiling for given exercise."
     echo ""
     echo "Example:"
     echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc -- --slow-dataloading --mixed-precision"
@@ -53,6 +75,7 @@ QUEUE="acc_bench"
 ACCOUNT="bsc99"
 PARTITION="acc"
 EXERCISE=""
+
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -89,8 +112,8 @@ while [[ $# -gt 0 ]]; do
             break
             ;;
         *)
-            echo "Error: Unknown option $1"
-            usage
+            message="Unknown option $1"
+            error_usage "$message"
             ;;
     esac
 done
@@ -100,13 +123,13 @@ EXTRA_ARGS=("$@")
 
 # Validate exercise number
 if [[ -z "$EXERCISE" ]]; then
-    echo "Error: Exercise number is required (-e, --exercise)"
-    usage
+    message="Exercise number is required (-e, --exercise)"
+    error_usage "$message"
 fi
 
 if [[ ! "$EXERCISE" =~ ^[0-3]$ ]]; then
-    echo "Error: Exercise number must be 0, 1, 2, or 3"
-    exit 1
+    message="Exercise number must be 0, 1, 2, or 3"
+    error_usage "$message"
 fi
 
 # Set JOB_SCRIPT based on exercise number
@@ -133,12 +156,14 @@ case $EXERCISE in
         ;;
 esac
 
+ABSOLUTE_EXERCISE_DIR="$(realpath "$EXERCISE_DIR")"
+
 i=0
 
 # if exercise 0, no extra arguments should be provided
 if [[ $EXERCISE -eq 0 && ${#EXTRA_ARGS[@]} -gt 0 ]]; then
-    echo "Error: Exercise 0 does not accept extra arguments. Please remove the following extra arguments: ${EXTRA_ARGS[*]}"
-    usage
+    message="Exercise 0 does not accept extra arguments. Please remove the following extra arguments: ${EXTRA_ARGS[*]}"
+    error_usage "$message"
 fi
 
 train_config_message="\nTraining configuration added:\n"
@@ -150,16 +175,61 @@ messages_to_add=""
 #ACTIVATION_CHECKPOINTING=0
 #MIXED_PRECISION=0
 #SLOW_DATALOADING=0
+
+
+declare -A EX1_MODELS
+declare -A EX2_MODELS
+declare -A EX3_MODELS
+declare -A EX3_GPT_ARGS
+
+EX1_MODELS["Mistral_7B_v01"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mistral-7B-v0.1"
+EX1_MODELS["Llama_32_3B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.2/Llama-3.2-3B-Instruct"
+EX1_MODELS["Llama_31_8B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
+
+EX2_MODELS["Mistral_7B_v01"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mistral-7B-v0.1"
+EX2_MODELS["Mixtral_8x7B"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mixtral-8x7B-v0.1"
+EX2_MODELS["Llama_32_3B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.2/Llama-3.2-3B-Instruct"
+EX2_MODELS["Llama_31_8B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
+EX2_MODELS["Llama_33_70B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.3/Llama-3.3-70B-Instruct"
+
+EX3_MODELS["Mistral_7B_v01"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mistral-7B-v0.1"
+EX3_MODELS["Mixtral_8x7B"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mixtral-8x7B-v0.1"
+EX3_MODELS["Llama_32_3B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.2/Llama-3.2-3B-Instruct"
+EX3_MODELS["Llama_31_8B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
+EX3_MODELS["Llama_33_70B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.3/Llama-3.3-70B-Instruct"
+
+EX3_GPT_ARGS["Mistral_7B_v01"]="gpt_args/mistral_7b.sh"
+EX3_GPT_ARGS["Mixtral_8x7B"]="gpt_args/mixtral_8x7b.sh"
+EX3_GPT_ARGS["Llama_32_3B"]="gpt_args/llama_3.2_3b.sh"
+EX3_GPT_ARGS["Llama_31_8B"]="gpt_args/llama_3.1_8b.sh"
+EX3_GPT_ARGS["Llama_33_70B"]="gpt_args/llama_3.3_70b.sh"
+
+
+
 while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
     arg="${EXTRA_ARGS[$i]}"
     case "$arg" in
+        --model)
+            ((i++))
+            export MODEL_NAME="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Model set to $MODEL_NAME.\n"
+            ;;
         --slow-dataloading)
             export SLOW_DATALOADING=1
             messages_to_add+="  * Slow dataloading mode enabled!\n"
             ;;
         --mixed-precision)
             export MIXED_PRECISION=1
-            messages_to_add+="  * Mixed precision mode enabled!\n"
+            ((i++))
+            PRECISION_TYPE="${EXTRA_ARGS[$i]}"
+            # Validate precision type
+            if [[ ! "$PRECISION_TYPE" =~ ^(fp16|bf16|fp8)$ ]]; then
+                echo "Error: Invalid mixed precision type '$PRECISION_TYPE'"
+                echo "Valid options: fp16, bf16, fp8"
+                exit 1
+            fi
+            export PRECISION_TYPE="$PRECISION_TYPE"
+            messages_to_add+="  * Mixed precision mode enabled using '$PRECISION_TYPE'!\n"
             ;;
         --micro-batch-size)
             ((i++))
@@ -172,7 +242,8 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             messages_to_add+="  * Gradient accumulation steps set to $GRADIENT_ACCUMULATION_STEPS.\n"
             ;;
         --activation-checkpointing)
-            export ACTIVATION_CHECKPOINTING=1 
+            #export ACTIVATION_CHECKPOINTING=1 
+            export RECOMPUTE=1
             messages_to_add+="  * Activation checkpointing enabled!\n" ;;
         --ds-hpz-partition)
             ((i++))
@@ -205,6 +276,11 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export PP="${EXTRA_ARGS[$i]}"
             messages_to_add+="  * Pipeline parallelism set to $PP!\n"
             ;;
+        --ep)
+            ((i++))
+            export EP="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Expert parallelism set to $EP!\n"
+            ;;
         --global-batch-size)
             ((i++))
             export GLOBAL_BATCH_SIZE="${EXTRA_ARGS[$i]}"
@@ -214,9 +290,30 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export NSYS2PRV=1
             messages_to_add+="  * nsys2prv translation enabled!\n"
             ;;
+        --models_list)
+            if [[ $EXERCISE -eq 1 ]]; then
+                echo "Available models for Exercise 1 (DDP):"
+                for model in "${!EX1_MODELS[@]}"; do
+                    echo "  - $model"
+                done
+            elif [[ $EXERCISE -eq 2 ]]; then
+                echo "Available models for Exercise 2 (DeepSpeed):"
+                for model in "${!EX2_MODELS[@]}"; do
+                    echo "  - $model"
+                done
+            elif [[ $EXERCISE -eq 3 ]]; then
+                echo "Available models for Exercise 3 (MegatronLM):"
+                for model in "${!EX3_MODELS[@]}"; do
+                    echo "  - $model: ${EX3_MODELS[$model]}"
+                done
+            else
+                echo "No models available for Exercise $EXERCISE."
+            fi
+            exit 0
+            ;;
         *)
-            echo "  !! Error: Unknown option $arg !!"
-            usage
+            message="Unknown option '$arg' !!"
+            error_usage "$message"
             ;;
     esac
     ((i++))
@@ -232,125 +329,129 @@ STAGE=3 # default to stage 3 for DeepSpeed, can be overridden with --ds-stage2
 if [[ -n "$DS_STAGE2" ]]; then
     STAGE=2
 fi
-# Set JOB_SCRIPT based on exercise number
-#case $EXERCISE in
-#    1)  
-#    MODEL_NAME="Llama-3.1-1B"
-#    PROFILE_DIR="$MODEL_NAME-$SLURM_JOB_ID-\
-#n$NUM_NODES-\
-#g4-\
-#mbs$MICRO_BATCH_SIZE-\
-#gas${GRADIENT_ACCUMULATION_STEPS}-\
-#mixed${MIXED_PRECISION}-\
-#slow${SLOW_DATALOADING}/nsys"
-#        ;;
-#    2) 
-#    MODEL_NAME="Mistral-7B-v0.1"
-#    PROFILE_DIR="$MODEL_NAME-$SLURM_JOB_ID-\
-#n$NUM_NODES-\
-#g4-\
-#mbs$MICRO_BATCH_SIZE-\
-#gas${GRADIENT_ACCUMULATION_STEPS}-\
-#mixed${MIXED_PRECISION}-\
-#actckpt${ACTIVATION_CHECKPOINTING}-\
-#commoverlap${DS_NO_OVERLAP}-\
-#hpz${HPZ_PARTITION_SIZE}-\
-#ZeRO${STAGE}/nsys"
-#        ;;
-#    3) 
-#    MODEL_NAME="Mistral-7B-v0.1"
-#    PROFILE_DIR="$MODEL_NAME-$SLURM_JOB_ID-\
-#n$NUM_NODES-\
-#g4-\
-#mbs$MICRO_BATCH_SIZE-\
-#gbs$GLOBAL_BATCH_SIZE-\
-#tp$TP-\
-#pp$PP/nsys"
-#        ;;
-#esac
+
+
+# Validate model exists in the appropriate exercise model list
+if [[ -n "$MODEL_NAME" ]]; then
+    case $EXERCISE in
+        1)
+            if [[ ! -v EX1_MODELS["$MODEL_NAME"] ]]; then
+                echo "Error: Model '$MODEL_NAME' is not available for Exercise 1 (DDP)"
+                echo "Available models:"
+                for model in "${!EX1_MODELS[@]}"; do
+                    echo "  - $model"
+                done
+                exit 1
+            fi
+            export PATH_MODEL="${EX1_MODELS[$MODEL_NAME]}"
+            export PATH_TOKENIZER="${EX1_MODELS[$MODEL_NAME]}"
+            ;;
+        2)
+            if [[ ! -v EX2_MODELS["$MODEL_NAME"] ]]; then
+                echo "Error: Model '$MODEL_NAME' is not available for Exercise 2 (DeepSpeed)"
+                echo "Available models:"
+                for model in "${!EX2_MODELS[@]}"; do
+                    echo "  - $model"
+                done
+                exit 1
+            fi
+            export PATH_MODEL="${EX2_MODELS[$MODEL_NAME]}"
+            export PATH_TOKENIZER="${EX2_MODELS[$MODEL_NAME]}"
+            ;;
+        3)
+            if [[ ! -v EX3_MODELS["$MODEL_NAME"] ]]; then
+                echo "Error: Model '$MODEL_NAME' is not available for Exercise 3 (MegatronLM)"
+                echo "Available models:"
+                for model in "${!EX3_MODELS[@]}"; do
+                    echo "  - $model"
+                done
+                exit 1
+            fi
+            # Also validate GPT args file exists for exercise 3
+            if [[ ! -v EX3_GPT_ARGS["$MODEL_NAME"] ]]; then
+                echo "Error: No GPT args configuration found for model '$MODEL_NAME'"
+                exit 1
+            fi
+
+            export GPT_ARGS_FILE="$ABSOLUTE_EXERCISE_DIR/${EX3_GPT_ARGS[$MODEL_NAME]}"
+            export PATH_MODEL="${EX3_MODELS[$MODEL_NAME]}"
+            export PATH_TOKENIZER="${EX3_MODELS[$MODEL_NAME]}"
+            #echo "GPT args file set to $GPT_ARGS_FILE based on provided model name ${MODEL_NAME}"
+            ;;
+    esac
+else
+    echo "Error: --model option is required to specify which model to profile for exercise $EXERCISE"
+    echo "Use --models_list option to see available models for this exercise."
+    exit 1
+fi
 
 
 # Slow dataloading is only valid for exercise 1 (DDP)
 if [[ $SLOW_DATALOADING -eq 1 && $EXERCISE -ne 1 ]]; then
-    echo "Error: --slow-dataloading option is only valid for exercise 1"
-    echo ""
-    usage
+    message="--slow-dataloading option is only valid for exercise 1"
+    error_usage "$message"
 fi
 
 if [[ $EXERCISE -eq 1 && -n "$ACTIVATION_CHECKPOINTING" ]]; then
-    echo "Error: --activation-checkpointing is not a valid option for exercise $EXERCISE !!"
-    echo ""
-    usage
+    message="--activation-checkpointing is not a valid option for exercise $EXERCISE !!"
+    error_usage "$message"
 fi
 
 if [[ -n "$HPZ_PARTITION_SIZE" && $EXERCISE -ne 2 ]]; then
-    echo "Error: --ds-hpz-partition option is only valid for exercise 2 (DeepSpeed)"
-    echo ""
-    usage
+    message="--ds-hpz-partition option is only valid for exercise 2 (DeepSpeed)"
+    error_usage "$message"
 fi
 
 if [[ -n "$DS_STAGE2" && $EXERCISE -ne 2 ]]; then
-    echo "Error: --ds-stage2-partition option is only valid for exercise 2 (DeepSpeed)"
-    echo ""
-    usage
+    message="--ds-stage2-partition option is only valid for exercise 2 (DeepSpeed)"
+    error_usage "$message"
 fi
 
 if [[ -n "$HEAVY_COMM" && $EXERCISE -ne 2 ]]; then
-    echo "Error: --ds-heavy-comm option is only valid for exercise 2 (DeepSpeed)"
-    echo ""
-    usage
+    message="--ds-heavy-comm option is only valid for exercise 2 (DeepSpeed)"
+    error_usage "$message"
 fi
 if [[ -n "$DS_NO_OVERLAP" && $EXERCISE -ne 2 ]]; then
-    echo "Error: --ds-no-overlap option is only valid for exercise 2 (DeepSpeed)"
-    echo ""
-    usage
+    message="--ds-no-overlap option is only valid for exercise 2 (DeepSpeed)"
+    error_usage "$message"
 fi
 if [[ $ACTIVATION_CHECKPOINTING -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
-    echo "Error: Activation checkpointing with full precision is not supported in the provided configs.Please enable mixed precision or disable activation checkpointing."
-    echo ""
-    usage
+    message="Activation checkpointing with full precision is not supported in the provided configs.Please enable mixed precision or disable activation checkpointing."
+    error_usage "$message"
 fi
 if [[ $HEAVY_COMM -eq 1 && $MIXED_PRECISION -eq 0 ]]; then
-    echo "Error: Heavy communication overhead example is only supported with mixed precision in the provided configs. Please enable mixed precision to use this option."
-    echo ""
-    usage
+    message="Heavy communication overhead example is only supported with mixed precision in the provided configs. Please enable mixed precision to use this option."
+    error_usage "$message"
 fi
 if [[ $HEAVY_COMM -eq 1 && $ACTIVATION_CHECKPOINTING -eq 1 ]]; then
-    echo "Error: Heavy communication overhead example is not compatible with activation checkpointing in the provided configs. Please disable activation checkpointing to use this option."
-    echo ""
-    usage
+    message="Heavy communication overhead example is not compatible with activation checkpointing in the provided configs. Please disable activation checkpointing to use this option."
+    error_usage "$message"
 fi
 # Check if job script exists
 if [[ ! -f "$EXERCISE_DIR/$JOB_SCRIPT" ]]; then
-    echo "Error: Job script not found: $EXERCISE_DIR/$JOB_SCRIPT"
-    echo "Contact the workshop organizers to resolve this issue."
-    echo ""
-    exit 1
+    message="Job script not found: '$EXERCISE_DIR/$JOB_SCRIPT'! Contact the workshop organizers to resolve this issue."
+    error_usage "$message"
 fi
 
 if [[ -n $PP ]]; then
     if [[ $EXERCISE -ne 3 ]]; then
-        echo "Error: --pp option is only valid for exercise 3 (MegatronLM)"
-        echo ""
-        usage
+        message="--pp option is only valid for exercise 3 (MegatronLM)"
+        error_usage "$message"
     fi
     if [[ $PP -gt $NUM_NODES ]]; then
-        echo "Error: Invalid value for --pp option. PP($PP) cannot be greater than the number of nodes ($NUM_NODES)."
-        echo ""
-        usage
+        message="Invalid value for --pp option. PP($PP) cannot be greater than the number of nodes ($NUM_NODES)."
+        error_usage "$message"
     fi
 fi
 
 if [[ -n $GLOBAL_BATCH_SIZE && $EXERCISE -ne 3 ]]; then
-    echo "Error: --global-batch-size option is only valid for exercise 3 (MegatronLM)"
-    echo ""
-    usage
+    message="--global-batch-size option is only valid for exercise 3 (MegatronLM)"
+    error_usage "$message"
 fi
 
 if [[ -n $TP && $EXERCISE -ne 3 ]]; then
-    echo "Error: --tp option is only valid for exercise 3 (MegatronLM)"
-    echo ""
-    usage
+    message="--tp option is only valid for exercise 3 (MegatronLM)"
+    error_usage "$message"
 fi
 
 
@@ -370,6 +471,7 @@ cleanup() {
 }
 trap cleanup EXIT
 # Export variables for use in SLURM script
+export ABSOLUTE_EXERCISE_DIR
 export NUM_NODES
 export NUM_GPUS
 export QUEUE
@@ -378,6 +480,7 @@ export PARTITION
 export EXERCISE_NAME
 export EXERCISE_DIR
 export RANDOM_PREFIX
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Apply placeholders substitution
 sed -i "s/nodes={{NUM_NODES}}/nodes=$NUM_NODES/g"  "$tmp_job_script"
@@ -385,18 +488,8 @@ sed -i "s/gres=gpu:{{NUM_GPUS}}/gres=gpu:$NUM_GPUS/g"  "$tmp_job_script"
 sed -i "s/account={{ACCOUNT}}/account=$ACCOUNT/g"  "$tmp_job_script"
 sed -i "s/qos={{QUEUE}}/qos=$QUEUE/g"  "$tmp_job_script"
 sed -i "s/partition={{PARTITION}}/partition=$PARTITION/g"  "$tmp_job_script"
-sed -i "s|output={{LOG_OUT}}|output=$EXERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.out|g"  "$tmp_job_script"
-sed -i "s|error={{LOG_ERR}}|error=$EXERCISE_DIR/logs/nodes-$NUM_NODES/%j/log.err|g"  "$tmp_job_script"
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-MAGENTA='\033[1;35m'
-CYAN='\033[1;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
-
+sed -i "s|output={{LOG_OUT}}|output=$EXERCISE_DIR/logs/$MODEL_NAME/nodes-$NUM_NODES/%j/log.out|g"  "$tmp_job_script"
+sed -i "s|error={{LOG_ERR}}|error=$EXERCISE_DIR/logs/$MODEL_NAME/nodes-$NUM_NODES/%j/log.err|g"  "$tmp_job_script"
 
 echo -e "${BOLD}${CYAN}============================================================${RESET}"
 echo -e "${BOLD}${GREEN}NSYS Profiling Configuration${RESET} (${YELLOW}Exercise $EXERCISE - $EXERCISE_NAME${RESET}):"
@@ -426,4 +519,4 @@ echo -e "${BOLD}${GREEN}Submitted job with ID=${RESET}${YELLOW}$JOB_ID${RESET}"
 echo ""
 echo -e "${CYAN}Monitor with:${RESET} ${BOLD}squeue -j $JOB_ID${RESET}"
 echo -e "${CYAN}Logs will be at:${RESET} ${BOLD}$EXERCISE_DIR/logs/nodes-$NUM_NODES/$JOB_ID/${RESET}"
-echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXERCISE_DIR/profiler/<model name>-$JOB_ID-<training configuration>${RESET}"
+echo -e "${CYAN}Profiles will be at:${RESET} ${BOLD}$EXERCISE_DIR/profiler/$MODEL_NAME/$JOB_ID-<training configuration>${RESET}"

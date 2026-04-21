@@ -16,6 +16,8 @@ module purge
 module load singularity
 module load cuda/12.6
 
+source "${ABSOLUTE_EXERCISE_DIR}/../env.sh"
+
 export NUMEXPR_MAX_THREADS=256
 export NCCL_P2P_DISABLE=0
 export CUDA_DEVICE_MAX_CONNECTIONS=1 
@@ -34,13 +36,13 @@ export NCCL_IB_DISABLE=0
 export NCCL_DEBUG_SUBSYS=INIT
 
 # === Singularity Image Path ===
-export PATH_SINGULARITY="<set path to container image here>"
+export PATH_SINGULARITY="$EX3_CONTAINER_IMAGE"
 
 # === Host Folder Bind Mount Setup ===
-export PATH_TOKENIZER="<set path to tokenizer here>"
-export PATH_MODEL="<set path to model here>"
-export PATH_DATA="<set path to data here>"
-export PATH_TO_BIN="<set path to binary here>" # path inside the data folder containing .bin & .idx
+export PATH_TOKENIZER="$PATH_TOKENIZER"
+export PATH_MODEL="$PATH_MODEL"
+export PATH_DATA="$EX3_DATASET_PATH"
+export PATH_TO_BIN="$EX3_DATASET_BIN" # path inside the data folder containing .bin & .idx
 export PATH_RESULTS="$EXERCISE_DIR/results"
 export PATH_LOGS="$EXERCISE_DIR/logs-megatronlm"
 export PATH_CACHE="$EXERCISE_DIR/.cache-megatronlm"
@@ -48,12 +50,10 @@ export PATH_CACHE="$EXERCISE_DIR/.cache-megatronlm"
 mkdir -p "$PATH_RESULTS" "$PATH_LOGS" "$PATH_CACHE"
 
 # === Megatron Config Defaults ===
-MODEL_SIZE="mistral7b"
 TP="${TP:-4}"
 PP="${PP:-1}"
 CP="${CP:-1}"
-#EP="${EP:-2}"
-MBS="${MICRO_BATCH_SIZE:-4}"
+MBS="${MICRO_BATCH_SIZE:-1}"
 GBS="${GLOBAL_BATCH_SIZE:-128}" # -> 
 SEQ_LENGTH="${SEQ_LENGTH:-4096}"
 MAX_POSITION_EMBEDDINGS=$SEQ_LENGTH
@@ -69,6 +69,10 @@ EVAL_INTERVAL="${EVAL_INTERVAL:-10000}"
 SAVE_INTERVAL="${SAVE_INTERVAL:-10000}"
 EVAL_ITERS="${EVAL_ITERS:--1}"
 CKPT_FORMAT="${CKPT_FORMAT:-torch}"
+ACTIVATION_CHECKPOINTING="${ACTIVATION_CHECKPOINTING:-0}"
+
+LR=${LR:-1e-5}
+MIN_LR=${MIN_LR:-1e-6}
 
 NO_PROFILE="${NO_PROFILE:-0}" # Boolean flag to disable profiling (for testing without nsys overhead)
 NSYS2PRV="${NSYS2PRV:-0}" # Boolean flag to enable nsys2prv translation after profiling
@@ -80,23 +84,30 @@ echo "Nodes: $SLURM_NNODES"
 echo "TP: $TP"
 echo "PP: $PP"
 echo "CP: $CP"
-#echo "EP: $EP"
+if [[ "$MOE" -eq 1 ]]; then
+    EP="${EP:-1}"
+    echo "EP: $EP"
+fi
 echo "MBS: $MBS"
 echo "GBS: $GBS"
 
 
+
+
 # === Model Hyperparameters ===
-if [[ $MODEL_SIZE -eq "mistral7b" ]]; then # based on
-   # Core architecture
-    HIDDEN_SIZE=4096
-    FFN_HIDDEN_SIZE=14336
-    NUM_LAYERS=32
-    NUM_HEADS=32
-    NUM_KV_HEADS=8
-    MAX_POSITION_EMBEDDINGS=4096
-    SEQ_LENGTH=4096
-    INIT_METHOD_STD=0.005
-    ROTARY_BASE=1000000
+if [[ -z "$GPT_ARGS_FILE" ]]; then
+    echo "Error: GPT_ARGS_FILE is not set"
+    exit 1
+fi
+
+# Sourcing GPT args from model's configuration file
+. "$GPT_ARGS_FILE"
+echo "Sourced GPT args from $GPT_ARGS_FILE"
+
+# Verify critical variables are set
+if [[ -z "$HIDDEN_SIZE" || -z "$NUM_LAYERS" || -z "$NUM_HEADS" ]]; then
+    echo "Error: Required variables not set after sourcing $GPT_ARGS_FILE"
+    exit 1
 fi
 GROUP_SIZE=$(( NUM_HEADS / NUM_KV_HEADS ))
 NUM_GROUPS=$(( NUM_HEADS / GROUP_SIZE ))
@@ -152,15 +163,27 @@ export GPT_ARGS="\
     --global-batch-size ${GBS} \
     --train-iters ${TOTAL_ITERS} \
     --no-async-tensor-model-parallel-allreduce \
-    --bf16 \
 	--use-flash-attn \
     --no-masked-softmax-fusion \
     --group-query-attention \
     --num-query-groups ${NUM_GROUPS}"
 
+if [[ "$MIXED_PRECISION" -eq 1 ]]; then
+    if [[ "$PRECISION_TYPE" == "fp16" ]]; then
+        GPT_ARGS+=" \
+        --fp16"
+    elif [[ "$PRECISION_TYPE" == "bf16" ]]; then
+        GPT_ARGS+=" \
+        --bf16"
+    elif [[ "$PRECISION_TYPE" == "fp8" ]]; then
+        GPT_ARGS+=" \
+        --te-fp8"
+    fi
+fi
+
 export TRAIN_ARGS=" \
-    --lr 1e-4 \
-    --min-lr 1e-5 \
+    --lr  $LR \
+    --min-lr $MIN_LR \
     --lr-warmup-fraction 0.01 \
     --lr-decay-iters 320000 \
     --lr-decay-style cosine \
@@ -193,9 +216,12 @@ export EXTRA_ARGS=" \
 
 if [[ "$RECOMPUTE" -eq 1 ]]; then
     EXTRA_ARGS+=" \
-	--recompute-num-layers ${NUM_LAYERS} \ 
+	--recompute-num-layers $(( NUM_LAYERS / PP )) \
 	--recompute-granularity full \
 	--recompute-method block"
+elif [[ "$ACTIVATION_CHECKPOINTING" -eq 1 ]]; then
+    EXTRA_ARGS+=" \
+    --recompute-activations"
 fi
 
 
@@ -270,9 +296,8 @@ train_command="torchrun $DISTRIBUTED_ARGS \
 
 
 # Wrap with Singularity - use train_command_with_nsys which includes nsys
-singularity_prefix="singularity exec --nv \
-    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
-"
+# --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
+singularity_prefix="singularity exec --nv "
 gpu_monitor_command="$singularity_prefix \
 	$PATH_SINGULARITY python -m utils.gpus_monitor"
 
@@ -294,7 +319,7 @@ echo "$train_command"
 # Create base directory for nsys reports
 MODEL_NAME=$(basename "$PATH_MODEL")
 export PROFILER_PREFIX_PATH="$EXERCISE_DIR/profiler/\
-$MODEL_NAME-$SLURM_JOB_ID-\
+$MODEL_NAME/$SLURM_JOB_ID-\
 n$SLURM_NNODES-\
 g4-\
 mbs$MBS-\
@@ -376,9 +401,10 @@ srun -l --ntasks-per-node="$SLURM_NTASKS_PER_NODE" \
     bash -c "$train_command"
 
 
-if [ $NSYS2PRV -eq 1 ]; then
+if [ "$NSYS2PRV" -eq 1 ]; then
     experiment_path="$PROFILER_PREFIX_PATH"
     experiment_name=$(basename "$experiment_path")
     echo "$ECHO_PREFIX Generating Paraver traces from NSYS profiles with name $experiment_name..."
+    export NSYS2PRVR_CONTAINER="$ABSOLUTE_EXERCISE_DIR/../../singularity-images/ai-profiling-workshop-nsys2prv.sif"
     bash "../nsys2prv/nsys2prv-folder.sh" "$NSYS_OUTPUT_DIR" -n "$experiment_name"
 fi

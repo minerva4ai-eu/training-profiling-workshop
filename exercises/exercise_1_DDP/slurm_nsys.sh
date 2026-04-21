@@ -25,6 +25,8 @@ module purge
 module load singularity
 module load cuda/12.6  # Ensure nsys is available
 
+source "${EXERCISE_DIR}/../env.sh"
+
 export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
 
 # =============================================
@@ -49,9 +51,9 @@ export LOGLEVEL=INFO
 export TOKENIZERS_PARALLELISM=false
 
 # Dataset and model paths
-DATASET_PATH="<set path to dataset here>" 
-MODEL_PATH="<set path to model here>"
-CONTAINER_IMAGE="<set path to container image here>"
+DATASET_PATH="$EX1_DATASET_PATH" 
+CONTAINER_IMAGE="$EX1_CONTAINER_IMAGE"
+MODEL_PATH="$PATH_MODEL"
 
 SLOW_DATALOADING=${SLOW_DATALOADING:-0} # Boolean flag to enable slow dataloading (for testing bottlenecks)
 MIXED_PRECISION=${MIXED_PRECISION:-0} # Boolean flag to enable mixed precision (e.g., bf16)
@@ -119,8 +121,9 @@ sed -i "s/main_process_ip: ''/main_process_ip: $head_node_ip/g" "$tmp_config"
 sed -i "s/num_machines: 0/num_machines: $NUM_NODES/g" "$tmp_config"
 sed -i "s/num_processes: 0/num_processes: $num_processes/g" "$tmp_config"
 ABSOLUTE_EXERCISE_DIR="$(realpath "$EXERCISE_DIR")"
+#    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
 singularity_prefix="singularity exec --network host --nv \
-    --bind "$ABSOLUTE_EXERCISE_DIR":"$ABSOLUTE_EXERCISE_DIR" \
+    --bind /apps:/apps \
 	$CONTAINER_IMAGE"
 
 gpu_monitor_command="$singularity_prefix python -m utils.gpus_monitor"
@@ -155,7 +158,7 @@ train_command="$train_command $TRAIN_CLI_ARGS"
 # ============================================================================
 MODEL_NAME=$(basename "$MODEL_PATH")
 export PROFILER_PREFIX_PATH="$EXERCISE_DIR/profiler/\
-$MODEL_NAME-$SLURM_JOB_ID-\
+$MODEL_NAME/$SLURM_JOB_ID-\
 n$SLURM_NNODES-\
 g4-\
 mbs$MICRO_BATCH_SIZE-\
