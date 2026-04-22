@@ -97,9 +97,11 @@ mkdir -p "$OUTPUT_DIR"
 
 SINGU_PREFIX="singularity exec --nv \
 --bind /apps:/apps \
---bind $INPUT_DIR:$INPUT_DIR \
---bind $OUTPUT_DIR:$OUTPUT_DIR \
-$CONTAINER"
+--bind $INPUT_DIR:$INPUT_DIR "
+if [[ "$OUTPUT_DIR" != "$INPUT_DIR" ]]; then
+    SINGU_PREFIX+=" --bind $OUTPUT_DIR:$OUTPUT_DIR "
+fi
+SINGU_PREFIX+=" $CONTAINER"
 
 $SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
 

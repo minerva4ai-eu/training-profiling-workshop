@@ -6,17 +6,29 @@
 #SBATCH --gres=gpu:4
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=80
-#SBATCH --time=00:30:00
-#SBATCH --exclusive
-#SBATCH --account=tra26_minwinsc
-#SBATCH --partition=boost_usr_prod
+#SBATCH --time=02:00:00
+#SBATCH --account={{set account}}
+#SBATCH --partition={{set partition}}
+#SBATCH --qos={{set queue}}
+##SBATCH --exclusive
+
+# Ensure script is run from exercises/ directory
+if [[ ! "$(basename "$PWD")" == "nsys2prv" ]]; then
+    echo "---------------------------------------------------------"
+    echo -e "${BOLD}${RED}Error:${RESET} ${RED}This script must be run from the 'exercises/' directory${RESET}"
+    echo -e "${BOLD}${YELLOW}Current directory:${RESET} $PWD"
+    echo "---------------------------------------------------------"
+    exit 1
+fi
 
 module purge
-module load cuda/12.6
+module load cuda/12.6 singularity
+
+source ../exercises/env.sh
 
 CONTAINER="$NSYS2PRV_CONTAINER_IMAGE"
 
-set -euo pipefail
+# set -euo pipefail
 
 usage() {
     YELLOW="\033[1;33m"
@@ -48,9 +60,6 @@ if [[ $# -lt 1 ]]; then
     echo "Error: <folder-path> argument is required."
     usage
 fi
-
-module purge
-module load cuda/12.6 # -> nsys version 2024.6.2 compatible with nemo25.02 cuda/nsys version
 
 # Read the first positional argument as the folder path
 INPUT_DIR="$1"
@@ -97,7 +106,7 @@ export SINGULARITYENV_APPEND_PATH="$(which nsys)"
 #fi
 
 
-SINGU_PREFIX="singularity exec --nv -B leonard/ $CONTAINER"
+SINGU_PREFIX="singularity exec --nv -B /apps:/apps $CONTAINER"
 
 $SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
 
@@ -111,7 +120,7 @@ if [[ ! -d "$INPUT_DIR" ]]; then
 fi
 
 # Create output directory if needed (before resolving path)
-OUTPUT_DIR="${2:-$INPUT_DIR}"
+OUTPUT_DIR="${OUTPUT_DIR:-$INPUT_DIR}"
 OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
 mkdir -p "$OUTPUT_DIR"
 
@@ -124,7 +133,7 @@ if [[ ${#NSYS_FILES[@]} -eq 0 || ! -e "${NSYS_FILES[0]}" ]]; then
 fi
 
 # Derive output name from folder name if not provided
-OUTPUT_NAME="${3:-$(basename "$INPUT_DIR")}"
+OUTPUT_NAME="${OUTPUT_NAME:-$(basename "$INPUT_DIR")}"
 OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_NAME"
 
 # Trace types to extract
@@ -161,17 +170,19 @@ if [ "$FILE_BY_FILE" = true ]; then
         file_basename=$(basename "$nsys_file" .nsys-rep)
         output_file="$OUTPUT_DIR/${file_basename}"
         
+        echo "----------------------------------------"
         echo "Converting: $(basename "$nsys_file")"
         echo "  -> $output_file.prv"
         
-        $SINGU_PREFIX  nsys2prv -t "$TRACE_TYPES" -m "$nsys_file" "$output_file"
-        if [[ $? -eq 0 ]]; then
+        if $SINGU_PREFIX nsys2prv -t "$TRACE_TYPES" -m "$nsys_file" "$output_file"; then
             echo "  [OK] Success"
             ((SUCCESS_COUNT++))
         else
             echo "  [FAIL] Conversion failed"
             ((FAIL_COUNT++))
         fi
+        
+        echo "----------------------------------------"
         echo ""
     done
     
