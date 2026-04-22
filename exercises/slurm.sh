@@ -186,27 +186,7 @@ declare -A EX2_MODELS
 declare -A EX3_MODELS
 declare -A EX3_GPT_ARGS
 
-EX1_MODELS["Mistral_7B_v01"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mistral-7B-v0.1"
-EX1_MODELS["Llama_32_3B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.2/Llama-3.2-3B-Instruct"
-EX1_MODELS["Llama_31_8B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
-
-EX2_MODELS["Mistral_7B_v01"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mistral-7B-v0.1"
-EX2_MODELS["Mixtral_8x7B"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mixtral-8x7B-v0.1"
-EX2_MODELS["Llama_32_3B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.2/Llama-3.2-3B-Instruct"
-EX2_MODELS["Llama_31_8B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
-EX2_MODELS["Llama_33_70B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.3/Llama-3.3-70B-Instruct"
-
-EX3_MODELS["Mistral_7B_v01"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mistral-7B-v0.1"
-EX3_MODELS["Mixtral_8x7B"]="/gpfs/scratch/shared/ai-hub/models/text-models/Mixtral-8x7B-v0.1"
-EX3_MODELS["Llama_32_3B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.2/Llama-3.2-3B-Instruct"
-EX3_MODELS["Llama_31_8B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.1/Llama-3.1-8B"
-EX3_MODELS["Llama_33_70B"]="/gpfs/scratch/shared/ai-hub/models/text-models/meta-llama/Llama-3.3/Llama-3.3-70B-Instruct"
-
-EX3_GPT_ARGS["Mistral_7B_v01"]="gpt_args/mistral_7b.sh"
-EX3_GPT_ARGS["Mixtral_8x7B"]="gpt_args/mixtral_8x7b.sh"
-EX3_GPT_ARGS["Llama_32_3B"]="gpt_args/llama_3.2_3b.sh"
-EX3_GPT_ARGS["Llama_31_8B"]="gpt_args/llama_3.1_8b.sh"
-EX3_GPT_ARGS["Llama_33_70B"]="gpt_args/llama_3.3_70b.sh"
+source models.sh
 
 
 

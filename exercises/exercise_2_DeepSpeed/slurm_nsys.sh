@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=2_fsdp_deepspeed_nsys
+#SBATCH --job-name=2_deepspeed_nsys
 #SBATCH --output={{LOG_OUT}}
 #SBATCH --error={{LOG_ERR}}
 #SBATCH --nodes={{NUM_NODES}}
@@ -73,7 +73,7 @@ export HPZ_PARTITION_SIZE=${HPZ_PARTITION_SIZE:-4} # Number of gpus per model re
 MICRO_BATCH_SIZE=${MICRO_BATCH_SIZE:-4}
 GRADIENT_ACCUMULATION_STEPS=${GRADIENT_ACCUMULATION_STEPS:-1}
 MIXED_PRECISION=${MIXED_PRECISION:-0}
-ACTIVATION_CHECKPOINTING=${ACTIVATION_CHECKPOINTING:-0}
+ACTIVATION_CHECKPOINTING=${RECOMPUTE:-0}
 
 NO_PROFILE=${NO_PROFILE:-0} # Boolean flag to disable profiling (for testing without nsys overhead)
 NSYS2PRV=${NSYS2PRV:-0} # Boolean flag to enable nsys2prv translation after profiling
@@ -298,7 +298,7 @@ NSYS_OPTS=" \
     --backtrace=dwarf \
     --cuda-memory-usage=true \
     --gpuctxsw=true \
-    --gpu-metrics-devices=all \
+    --gpu-metrics-devices=cuda-visible \
     --gpu-metrics-frequency=10000 \
     --capture-range=cudaProfilerApi \
     --capture-range-end=stop \

@@ -378,7 +378,7 @@ if [ -n "$NSYS_OUTPUT_DIR" ]; then
         --stats=true \
         --sample=cpu \
         --backtrace=dwarf \
-        --gpu-metrics-devices=all \
+        --gpu-metrics-devices=cuda-visible \
         --gpu-metrics-frequency=10000 \
         --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID} \
         $train_command"
