@@ -57,6 +57,7 @@ usage() {
     echo "  --ds-no-overlap                     Disable overlap communication in DeepSpeed, for exercise 2 only (default: disabled)"
     echo "  --tp N                              Set tensor parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no tensor parallelism)"
     echo "  --pp N                              Set pipeline parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no pipeline parallelism)"
+    echo "  --cp N                              Set context parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no context parallelism)"
     echo "  --ep N                              Set expert parallelism to N, for exercise 3 (MegatronLM) only (default: 1, i.e. no expert parallelism)"
     echo "  --global-batch-size N               Set global batch size to N, for exercise 3 (MegatronLM) only (default: 16)"
     echo "  --no-profile                        Disable profiling with NSYS (default: profiling enabled)"
@@ -279,6 +280,11 @@ while [[ $i -lt ${#EXTRA_ARGS[@]} ]]; do
             export PP="${EXTRA_ARGS[$i]}"
             messages_to_add+="  * Pipeline parallelism set to $PP!\n"
             ;;
+        --cp)
+            ((i++))
+            export CP="${EXTRA_ARGS[$i]}"
+            messages_to_add+="  * Context parallelism set to $CP!\n"
+            ;;
         --ep)
             ((i++))
             export EP="${EXTRA_ARGS[$i]}"
@@ -454,6 +460,11 @@ fi
 
 if [[ -n $TP && $EXERCISE -ne 3 ]]; then
     message="--tp option is only valid for exercise 3 (MegatronLM)"
+    error_usage "$message"
+fi
+
+if [[ -n $CP && $EXERCISE -ne 3 ]]; then
+    message="--cp option is only valid for exercise 3 (MegatronLM)"
     error_usage "$message"
 fi
 
