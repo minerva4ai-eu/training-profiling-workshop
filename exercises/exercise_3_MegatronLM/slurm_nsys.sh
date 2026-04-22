@@ -253,18 +253,22 @@ if [[ "$MOE" -eq 1 ]]; then
     --moe-router-load-balancing-type ${MOE_ROUTER_LOAD_BALANCING_TYPE} \
     --moe-aux-loss-coeff ${MOE_AUX_LOSS_COEFF} \
     --moe-grouped-gemm \
-    --moe-token-dispatcher-type alltoall \
-	--moe-layer-recompute"
+    --moe-token-dispatcher-type alltoall"
+
+    #if [[ "$RECOMPUTE" -eq 1 ]]; then
+    #    EXTRA_ARGS+=" \
+	#--moe-layer-recompute"
+    #fi
 fi
 
-export WANDB_MODE=offline
-export WANDB_DIR=/logs/wandb
-
-export LOGGING_ARGS="\
-    --tensorboard-dir /logs \
-    --wandb-project=open_euro_llm \
-    --wandb-exp-name=open_euro_llm_${MODEL_SIZE} \
-    --wandb-save-dir /logs/wandb"
+#export WANDB_MODE=offline
+#export WANDB_DIR=/logs/wandb
+#
+#export LOGGING_ARGS="\
+#    --tensorboard-dir /logs \
+#    --wandb-project=workshop \
+#    --wandb-exp-name=open_euro_llm_${MODEL_SIZE} \
+#    --wandb-save-dir /logs/wandb"
 
 export CKPT_LOAD_ARGS=""  # Customize if needed
 # export SRUN_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK
@@ -330,6 +334,10 @@ if [ -n "$EP" ]; then
     PROFILER_PREFIX_PATH+="-ep$EP"
 fi
 
+if [ -n "$CP" ]; then
+    PROFILER_PREFIX_PATH+="-cp$CP"
+fi
+
 export GPUS_MONITOR_PREFIX_PATH="$PROFILER_PREFIX_PATH"
 if [ $NO_PROFILE -eq 1 ]; then
     echo "$ECHO_PREFIX Profiling is disabled. NSYS output will not be generated."
@@ -368,6 +376,10 @@ if [ -n "$NSYS_OUTPUT_DIR" ]; then
         --capture-range=cudaProfilerApi \
         --capture-range-end=stop \
         --stats=true \
+        --sample=cpu \
+        --backtrace=dwarf \
+        --gpu-metrics-devices=all \
+        --gpu-metrics-frequency=10000 \
         --output=${NSYS_OUTPUT_DIR}/profile_node%q{SLURM_NODEID} \
         $train_command"
 else

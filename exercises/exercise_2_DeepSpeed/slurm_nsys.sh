@@ -294,6 +294,8 @@ export PROFILE_STEPS_INTERVAL=20
 
 NSYS_OPTS=" \
     --trace=cuda,nvtx,osrt,cudnn,cublas \
+    --sample=cpu \
+    --backtrace=dwarf \
     --cuda-memory-usage=true \
     --gpuctxsw=true \
     --gpu-metrics-devices=all \
