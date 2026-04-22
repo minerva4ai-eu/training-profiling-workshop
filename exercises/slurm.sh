@@ -65,7 +65,7 @@ usage() {
     echo "  --models_list                       List available models for profiling for given exercise."
     echo ""
     echo "Example:"
-    echo "  $0 -n 1 -g 4 -e 1 -a bsc99 -q acc_bench -p acc -- --model Llama_32_3B --mixed-precision bf16 --micro-batch-size 4 --gradient-accumulation-steps 4"
+    echo "  $0 -n 1 -g 4 -e 1 -a account1 -q acc_bench -p acc -- --model Llama_32_3B --mixed-precision bf16 --micro-batch-size 4 --gradient-accumulation-steps 4"
     echo ""
     exit 1
 }
