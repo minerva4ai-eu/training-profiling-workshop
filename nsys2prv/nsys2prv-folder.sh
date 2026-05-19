@@ -81,7 +81,7 @@ export SINGULARITYENV_APPEND_PATH="$(which nsys)"
 #fi
 
 CONTAINER=${NSYS2PRV_CONTAINER_IMAGE:-"../singularity-images/ai-profiling-workshop-nsys2prv.sif"}
-
+CONTAINER=$(realpath "$CONTAINER")
 INPUT_DIR="$(realpath "$INPUT_DIR")"
 
 # Validate input directory

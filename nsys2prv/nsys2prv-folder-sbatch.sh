@@ -105,12 +105,8 @@ export SINGULARITYENV_APPEND_PATH="$(which nsys)"
 #    exit 1
 #fi
 
-
-SINGU_PREFIX="singularity exec --nv -B /apps:/apps $CONTAINER"
-
-$SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
-
-
+CONTAINER=${NSYS2PRV_CONTAINER_IMAGE:-"../singularity-images/ai-profiling-workshop-nsys2prv.sif"}
+CONTAINER=$(realpath "$CONTAINER")
 INPUT_DIR="$(realpath "$INPUT_DIR")"
 
 # Validate input directory
@@ -123,6 +119,17 @@ fi
 OUTPUT_DIR="${OUTPUT_DIR:-$INPUT_DIR}"
 OUTPUT_DIR="$(realpath "$OUTPUT_DIR")"
 mkdir -p "$OUTPUT_DIR"
+
+SINGU_PREFIX="singularity exec --nv \
+--bind /apps:/apps \
+--bind $INPUT_DIR:$INPUT_DIR "
+if [[ "$OUTPUT_DIR" != "$INPUT_DIR" ]]; then
+    SINGU_PREFIX+=" --bind $OUTPUT_DIR:$OUTPUT_DIR "
+fi
+SINGU_PREFIX+=" $CONTAINER"
+
+$SINGU_PREFIX bash -c "echo \"PATH inside container: \$PATH\"; echo \"NSYS_HOME inside container: \$NSYS_HOME\""
+
 
 # Find all .nsys-rep files
 NSYS_FILES=( "$INPUT_DIR"/*.nsys-rep )
@@ -170,19 +177,17 @@ if [ "$FILE_BY_FILE" = true ]; then
         file_basename=$(basename "$nsys_file" .nsys-rep)
         output_file="$OUTPUT_DIR/${file_basename}"
         
-        echo "----------------------------------------"
         echo "Converting: $(basename "$nsys_file")"
         echo "  -> $output_file.prv"
         
-        if $SINGU_PREFIX nsys2prv -t "$TRACE_TYPES" -m "$nsys_file" "$output_file"; then
+        $SINGU_PREFIX  nsys2prv -t "$TRACE_TYPES" -m "$nsys_file" "$output_file"
+        if [[ $? -eq 0 ]]; then
             echo "  [OK] Success"
             ((SUCCESS_COUNT++))
         else
             echo "  [FAIL] Conversion failed"
             ((FAIL_COUNT++))
         fi
-        
-        echo "----------------------------------------"
         echo ""
     done
     
