@@ -11,7 +11,7 @@
 *.sqlite
 *.sif
 *.csv
-*.logs
+*.log
 
 *.prv
 *.pcf
